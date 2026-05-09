@@ -101,7 +101,6 @@ OUT_OF_SCOPE_TERMS = {
     "invasion",
     "military",
     "politics",
-    "spain",
     "war",
     "weather",
 }
@@ -259,6 +258,32 @@ def filter_relevant_items(question: str, retrieved_items: list[dict], max_distan
                 filtered.append(item)
 
     return filtered
+
+
+def select_assessed_sources(retrieved_items: list[dict], usable_source_numbers: list) -> list[dict]:
+    """Select retrieved items by 1-based source numbers returned by the assessor."""
+
+    selected = []
+    for source_number in usable_source_numbers:
+        if not isinstance(source_number, int):
+            continue
+
+        index = source_number - 1
+        if 0 <= index < len(retrieved_items):
+            selected.append(retrieved_items[index])
+
+    return selected
+
+
+def should_refuse_assessment(assessment: dict) -> bool:
+    """Return True when the structured assessment says not to answer."""
+
+    return (
+        assessment.get("domain_relevance") != "supported"
+        or assessment.get("source_relevance") == "not_relevant"
+        or assessment.get("context_sufficiency") == "insufficient"
+        or assessment.get("answer_mode") == "refuse"
+    )
 
 
 def _passes_distance(item: dict, max_distance: float | None) -> bool:

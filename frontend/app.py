@@ -23,8 +23,9 @@ from src.utils.config_loader import load_config
 from src.utils.legal_safety import requires_human_review, route_legal_service
 from src.utils.query_guard import (
     classify_query_intent,
-    filter_relevant_items,
     insufficient_context_answer,
+    select_assessed_sources,
+    should_refuse_assessment,
 )
 
 
@@ -251,36 +252,50 @@ if query:
         st.write(query)
 
     retrieved_items = vector_store.query_with_sources(query, n_results=N_RESULTS)
-    relevant_items = filter_relevant_items(query, retrieved_items, max_distance=MAX_DISTANCE)
-    query_intent = classify_query_intent(query)
-    context_items = format_context(relevant_items, query_intent)
-    retrieved_text = "\n\n".join(item["text"] for item in relevant_items)
-    recommended_service = route_legal_service(query, retrieved_text)
-    human_review_needed = requires_human_review(query, retrieved_text)
+    relevant_items = []
 
-    if not relevant_items:
+    if not retrieved_items:
         answer = insufficient_context_answer(query, retrieved_items)
     else:
-        with st.spinner("Analyzing the retrieved document context..."):
-            answer = llm.generate(query, context_items, history)
+        with st.spinner("Checking whether the retrieved sources can answer safely..."):
+            assessment = llm.assess_context(query, retrieved_items)
 
-        safety_footer = [
-            "",
-            "---",
-            f"Service route: {recommended_service}.",
-        ]
-
-        if human_review_needed:
-            safety_footer.append(
-                "Human review recommended for this issue."
-            )
-
-        safety_footer.append(
-            "Note: legal information and triage support only, not definitive legal advice."
+        relevant_items = select_assessed_sources(
+            retrieved_items,
+            assessment.get("usable_source_numbers", []),
         )
 
-        answer = f"{answer}\n" + "\n".join(safety_footer)
+        if should_refuse_assessment(assessment) or not relevant_items:
+            answer = insufficient_context_answer(query, retrieved_items)
+        else:
+            query_intent = assessment.get("answer_mode") or classify_query_intent(query)
+            context_items = format_context(relevant_items, query_intent)
+            retrieved_text = "\n\n".join(item["text"] for item in relevant_items)
+            recommended_service = route_legal_service(query, retrieved_text)
+            human_review_needed = assessment.get("human_review_recommended") or requires_human_review(
+                query,
+                retrieved_text,
+            )
 
+            with st.spinner("Analyzing the retrieved document context..."):
+                answer = llm.generate(query, context_items, history)
+
+            safety_footer = [
+                "",
+                "---",
+                f"Service route: {recommended_service}.",
+            ]
+
+            if human_review_needed:
+                safety_footer.append(
+                    "Human review recommended for this issue."
+                )
+
+            safety_footer.append(
+                "Note: legal information and triage support only, not definitive legal advice."
+            )
+
+            answer = f"{answer}\n" + "\n".join(safety_footer)
     with st.chat_message("assistant"):
         st.write(answer)
 
