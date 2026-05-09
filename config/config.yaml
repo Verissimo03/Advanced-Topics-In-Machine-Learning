@@ -58,6 +58,7 @@ prompts:
     Answer structures:
     - summary: Plain-language summary; Key points; Sources used; Short note.
     - risk: Main risks found; Why each risk matters; Missing information; Recommended next step; Sources used; Short note.
+    - lawyer_handoff: Clauses/issues to review before signing; Why each matters; Questions for the lawyer; Sources used; Short note.
     - gdpr: GDPR/data protection clauses found; Missing GDPR elements; Practical risk; Recommended next step; Sources used; Short note.
     - gdpr_general_guidance: GDPR documents/checklists found in the Legal knowledge base; Practical next step; Sources used; Short note.
     - missing_information: What was found; What was not found; Practical importance; Sources used; Short note.

@@ -80,3 +80,42 @@ def test_general_gdpr_question_can_use_knowledge_base_source():
     ]
 
     assert filter_relevant_items(question, retrieved_items) == retrieved_items
+
+
+def test_lawyer_review_before_signing_uses_uploaded_contract():
+    question = "What should be reviewed by a lawyer before signing?"
+    retrieved_items = [
+        {
+            "text": "Payment terms require payment within 30 days. Either party may terminate with 15 days written notice. Confidentiality lasts for 2 years. Supplier liability is limited to the amount paid in the previous 3 months. The agreement is governed by Portuguese law. Customer delivery information may be processed.",
+            "source": "supplier_contract_test.md",
+            "source_type": "uploaded",
+            "chunk": 1,
+            "distance": 0.2,
+        }
+    ]
+
+    assert classify_query_intent(question) == "lawyer_handoff"
+    assert filter_relevant_items(question, retrieved_items) == retrieved_items
+
+
+def test_signing_related_contract_questions_are_supported():
+    questions = [
+        "What should I check before signing?",
+        "What clauses need legal review?",
+        "What should be clarified before signing?",
+        "What should be negotiated?",
+    ]
+
+    for question in questions:
+        assert filter_relevant_items(
+            question,
+            [
+                {
+                    "text": "This supplier agreement includes payment terms, liability, termination, confidentiality, and governing law.",
+                    "source": "supplier_contract_test.md",
+                    "source_type": "uploaded",
+                    "chunk": 1,
+                    "distance": 0.2,
+                }
+            ],
+        )

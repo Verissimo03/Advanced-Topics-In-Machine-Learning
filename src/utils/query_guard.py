@@ -24,6 +24,7 @@ SUPPORTED_SCOPE_TERMS = {
     "law",
     "lawful",
     "legal",
+    "lawyer",
     "liability",
     "non-compete",
     "payment",
@@ -34,6 +35,8 @@ SUPPORTED_SCOPE_TERMS = {
     "risk",
     "risks",
     "service",
+    "sign",
+    "signing",
     "supplier",
     "termination",
     "terms",
@@ -42,14 +45,29 @@ SUPPORTED_SCOPE_TERMS = {
 SUPPORTED_ACTION_TERMS = {
     "analyze",
     "check",
+    "clarified",
     "compare",
     "explain",
     "find",
     "identify",
     "missing",
+    "negotiate",
+    "negotiated",
     "review",
+    "reviewed",
     "summarize",
     "summary",
+}
+
+LAWYER_HANDOFF_TERMS = {
+    "before signing",
+    "clarified",
+    "legal review",
+    "lawyer",
+    "negotiate",
+    "negotiated",
+    "reviewed",
+    "signing",
 }
 
 DOCUMENT_REFERENCE_TERMS = {
@@ -143,6 +161,8 @@ def classify_query_intent(question: str) -> str:
 
     if any(term in question_lower for term in ["summarize", "summary", "plain language"]):
         return "summary"
+    if any(term in question_lower for term in LAWYER_HANDOFF_TERMS):
+        return "lawyer_handoff"
     if any(term in question_lower for term in ["risk", "risky", "red flag", "before signing"]):
         return "risk"
     if any(term in question_lower for term in ["gdpr", "data protection", "privacy", "personal data"]):
@@ -234,7 +254,7 @@ def filter_relevant_items(question: str, retrieved_items: list[dict], max_distan
             filtered.append(item)
             continue
 
-        if intent in {"summary", "risk", "missing_information", "general_legal_triage"}:
+        if intent in {"summary", "risk", "lawyer_handoff", "missing_information", "general_legal_triage"}:
             if item_tokens & SUPPORTED_SCOPE_TERMS:
                 filtered.append(item)
 
