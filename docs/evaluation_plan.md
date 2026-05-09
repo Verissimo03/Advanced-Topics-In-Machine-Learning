@@ -38,11 +38,9 @@ The AI Judge and course evaluators should be able to test whether the assistant:
 
 ## Evaluation Method
 
-Use a small controlled knowledge base with:
+Use a small controlled demo document set with:
 - A supplier agreement.
-- A privacy policy template.
 - A GDPR checklist.
-- An employment onboarding checklist.
 - A deliberately incomplete contract.
 
 For each test, record:

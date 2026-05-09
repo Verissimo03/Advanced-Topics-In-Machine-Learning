@@ -776,7 +776,7 @@ Where used:
 
 How it contributes:
 
-- Builds the searchable legal knowledge base.
+- Builds the searchable document index used by the RAG pipeline.
 
 ### `VectorStore.query(query_text, n_results=3)`
 
@@ -1380,7 +1380,7 @@ The system reduces hallucinations by:
 
 ### What Happens When Context Is Insufficient
 
-If no relevant documents are retrieved, the app says it cannot answer safely based on the uploaded knowledge base.
+If no relevant documents are retrieved, the app says it cannot answer safely based on the uploaded or indexed documents.
 
 It asks the user to upload relevant documents or consult a lawyer.
 
@@ -1499,7 +1499,7 @@ Ask your group:
 - Do we need to show a lawyer escalation workflow in the demo?
 - Should the app simulate risk scoring, or only explanations and warnings?
 - Should the app include Portuguese-language examples?
-- Should the knowledge base include official Portuguese/EU legal documents?
+- Should we keep the current uploaded-document-only design, or later add official Portuguese/EU legal documents as a curated knowledge base?
 - Are we claiming local/private deployment as part of the value proposition?
 - How strong should the privacy promise be?
 - What are the main competitors listed in the business plan?
@@ -1663,7 +1663,7 @@ The technical system supports a SaaS legal assistant for SMEs. Basic users could
 - GitHub remote is not configured yet.
 - No production authentication.
 - No multi-tenant SME workspace separation.
-- No real curated legal knowledge base included yet.
+- No fixed curated legal knowledge base included yet; the current prototype is intentionally grounded in uploaded/indexed documents.
 - No advanced clause extraction.
 - No structured risk score.
 - No lawyer dashboard.
@@ -1683,7 +1683,7 @@ The technical system supports a SaaS legal assistant for SMEs. Basic users could
 
 - "This is just a wrapper."
 - "The legal risk logic is too simple."
-- "Where is the trusted legal knowledge base?"
+- "Why did you choose uploaded-document RAG instead of a fixed trusted legal knowledge base?"
 - "How do you prevent hallucinations?"
 - "Who is liable for wrong advice?"
 - "How do you handle private legal documents?"
@@ -1704,7 +1704,7 @@ The technical system supports a SaaS legal assistant for SMEs. Basic users could
 - Add simple structured risk score.
 - Add a lawyer handoff checklist button or prompt template.
 - Add Portuguese sample questions.
-- Add a small curated knowledge base folder.
+- Add a small curated knowledge base folder if the final business plan requires general legal guidance without uploads.
 - Add more tests for safety behavior.
 - Add screenshots to README.
 

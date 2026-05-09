@@ -48,4 +48,4 @@ Risk is reduced through:
 
 ## Remaining Limitations
 
-The system can retrieve irrelevant chunks, miss context in long documents, or fail to reflect current law if the knowledge base is outdated. It should be evaluated with legal professionals before production use.
+The system can retrieve irrelevant chunks, miss context in long documents, or fail to answer general legal questions when no relevant uploaded/indexed document exists. It should be evaluated with legal professionals before production use.

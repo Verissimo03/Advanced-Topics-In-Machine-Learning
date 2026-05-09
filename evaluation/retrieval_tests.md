@@ -2,11 +2,9 @@
 
 ## Test Setup
 
-Upload a controlled set of SME legal documents:
+Upload the controlled demo SME legal documents from `demo_documents/`:
 - Supplier agreement.
 - GDPR checklist.
-- Privacy policy template.
-- Employment onboarding checklist.
 - Incomplete contract draft.
 
 ## Test Cases
@@ -14,9 +12,8 @@ Upload a controlled set of SME legal documents:
 | Test | Query | Expected Retrieval |
 | --- | --- | --- |
 | Contract summary | "Summarize this supplier agreement" | Supplier agreement chunks with parties, scope, payment, liability, termination |
-| GDPR obligations | "Does this mention GDPR obligations?" | GDPR checklist or privacy policy chunks |
+| GDPR obligations | "Does this mention GDPR obligations?" | GDPR checklist chunks |
 | Missing clauses | "What clauses are missing?" | Incomplete contract chunks and clause list if available |
-| Employment triage | "What should I check before hiring?" | Employment onboarding chunks |
 | Lawyer checklist | "What should I ask a lawyer?" | Contract risk and missing-information chunks |
 
 ## Pass Criteria
@@ -31,6 +28,6 @@ Upload a controlled set of SME legal documents:
 If retrieval is weak:
 - Increase chunk size for legal documents.
 - Add metadata filters by document type.
-- Add a curated legal glossary.
+- Add a curated legal glossary or fixed legal knowledge base as future work.
 - Use query rewriting for Portuguese/English legal synonyms.
 - Add clause extraction before embedding.

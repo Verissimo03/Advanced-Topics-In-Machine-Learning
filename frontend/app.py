@@ -241,7 +241,7 @@ if query:
 
     if not retrieved_items:
         answer = (
-            "I could not find enough relevant information in the uploaded knowledge base to answer safely. "
+            "I could not find enough relevant information in the uploaded or indexed documents to answer safely. "
             "Please upload the relevant contract, policy, guidance, or template, and consider asking a licensed lawyer "
             "for jurisdiction-specific advice."
         )

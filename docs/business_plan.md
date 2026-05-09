@@ -28,7 +28,7 @@ The assistant gives SMEs a faster first legal read:
 - Employment-law triage.
 - Missing information detection.
 - Lawyer handoff questions.
-- Source-grounded answers using uploaded documents and trusted knowledge bases.
+- Source-grounded answers using uploaded or previously indexed SME documents. A curated Portugal/EU legal knowledge base can be added as a production roadmap feature.
 
 ## Product Description
 
@@ -94,7 +94,7 @@ The wedge is SME-specific legal triage for Portugal/EU, combining private docume
 ## Moat and Defensibility
 
 This should not be judged as a generic chatbot wrapper. Defensibility comes from:
-- Portugal/EU-focused legal knowledge base and templates.
+- Portugal/EU-focused workflow design, with a roadmap toward curated legal knowledge base documents and templates.
 - SME workflow design around contracts, GDPR, employment, and lawyer handoff.
 - RAG grounded in trusted legal materials and company documents.
 - Structured risk scoring and service routing.
@@ -120,6 +120,6 @@ Human review is triggered when matters involve signing contracts, employment ter
 - Hallucinated legal advice: strict RAG prompt, source citations, insufficient-context refusals, evaluation tests.
 - Liability: legal disclaimer, triage positioning, escalation triggers, partner lawyer review.
 - Data privacy: local deployment option, encryption, access control, tenant isolation.
-- Weak moat critique: focus on domain workflows, curated knowledge base, audit logs, service routing, and partnerships.
+- Weak moat critique: focus on domain workflows, audit logs, service routing, privacy-focused deployment, and partnerships.
 - Cost overruns: usage tiers, local models, batching embeddings, limits per plan.
-- Outdated law: versioned knowledge base and periodic legal review of source documents.
+- Outdated law: if a curated knowledge base is added later, it should use versioned sources and periodic legal review.

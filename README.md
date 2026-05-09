@@ -6,7 +6,7 @@ This is not a replacement for a lawyer. It is a legal triage, compliance support
 
 ## Startup Concept
 
-SMEs often cannot afford constant legal support, but they still need fast and understandable help with contracts, GDPR, employment documents, service terms, supplier agreements, and internal policies. This product gives them a first legal read grounded in their own documents and curated legal/compliance knowledge.
+SMEs often cannot afford constant legal support, but they still need fast and understandable help with contracts, GDPR, employment documents, service terms, supplier agreements, and internal policies. This prototype gives them a first legal read grounded in uploaded or previously indexed documents, instead of relying on the model as a legal authority.
 
 ## Problem
 
@@ -21,6 +21,8 @@ Legal and compliance work is expensive, slow, and difficult for SMEs to interpre
 ## Solution
 
 The app lets users upload documents, ask legal/compliance questions, and receive source-grounded answers. It separates information found in documents from practical interpretation, cites retrieved sources, flags uncertainty, and recommends human legal review for higher-risk issues.
+
+Current scope: the prototype answers from retrieved document chunks stored in the local vector database. These chunks come from documents uploaded through the app. A curated fixed Portugal/EU legal knowledge base is a future improvement, not part of the current core implementation.
 
 ## Target Market
 
@@ -43,6 +45,7 @@ Primary users:
 - Portugal/EU SME legal triage prompt.
 - Human-review recommendation logic.
 - Legal service routing.
+- Fictional demo documents for safe classroom testing.
 - Investor and academic documentation.
 
 ## Technical Architecture
@@ -133,6 +136,16 @@ For privacy-focused deployments, run Ollama and ChromaDB inside the same private
 - "Can you summarize this contract in simple language?"
 - "What should I ask a lawyer before signing this?"
 
+## Demo Documents
+
+The repository includes fictional, non-confidential demo files in `demo_documents/`:
+
+- `demo_supplier_agreement.md`
+- `demo_gdpr_checklist.md`
+- `demo_incomplete_service_agreement.md`
+
+Upload these files through the Streamlit sidebar before the live demo. They are intentionally simplified and should not be used as real legal documents.
+
 ## AI Unit Economics
 
 The prototype uses local Ollama models, so marginal inference cost is low after hosting costs. A cloud API version can still be viable with usage limits by tier. See `docs/ai_unit_economics.md` for assumptions and pricing coverage.
@@ -155,8 +168,8 @@ Additional models:
 
 This is designed as more than a generic chatbot wrapper:
 - SME-specific legal workflows.
-- Portugal/EU-focused legal knowledge base strategy.
-- RAG grounded in uploaded documents and trusted sources.
+- Portugal/EU-focused legal workflow strategy.
+- RAG grounded in uploaded/indexed documents and visible retrieved sources.
 - Source audit trail.
 - Human-in-the-loop escalation.
 - Structured risk/service routing.
@@ -189,7 +202,7 @@ These files are designed to test source grounding, refusal behavior, legal discl
 
 - The prototype does not provide binding legal advice.
 - Retrieved chunks may omit relevant context from long documents.
-- The legal knowledge base must be curated and kept up to date.
+- The current prototype does not include a fixed curated legal knowledge base.
 - Production deployment needs tenant isolation, authentication, encryption, and stronger audit logging.
 - Human lawyers are required for definitive legal conclusions.
 
@@ -201,5 +214,5 @@ These files are designed to test source grounding, refusal behavior, legal discl
 - Document comparison.
 - Lawyer review dashboard.
 - Admin analytics and audit exports.
-- Curated Portugal/EU legal knowledge base.
+- Optional curated Portugal/EU legal knowledge base.
 - Production authentication and encryption.
