@@ -4,6 +4,7 @@ Smoke tests for local RAG components that do not require a running Ollama server
 
 from src.utils.chunker import TextChunker
 from src.utils.legal_safety import requires_human_review, route_legal_service
+from src.utils.query_guard import filter_relevant_items, insufficient_context_answer
 
 
 def test_chunker_splits_long_text():
@@ -26,3 +27,25 @@ def test_legal_service_routing_for_gdpr():
     question = "Does this privacy policy explain GDPR and personal data obligations?"
 
     assert route_legal_service(question) == "GDPR / data protection review"
+
+
+def test_out_of_scope_question_does_not_use_supplier_contract():
+    question = "Do you think Portugal will ever get in a war with Spain?"
+    retrieved_items = [
+        {
+            "text": "This supplier agreement is governed by Portuguese law.",
+            "source": "supplier_contract_test.md",
+            "chunk": 1,
+            "distance": 0.2,
+        }
+    ]
+
+    assert filter_relevant_items(question, retrieved_items) == []
+
+
+def test_insufficient_context_answer_redirects_to_supported_scope():
+    answer = insufficient_context_answer("Do you think Portugal will ever get in a war with Spain?")
+
+    assert "do not have enough relevant information" in answer
+    assert "contracts" in answer
+    assert "GDPR" in answer

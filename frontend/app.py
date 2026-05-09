@@ -21,18 +21,27 @@ from src.models.llm import LLM
 from src.utils.chunker import TextChunker
 from src.utils.config_loader import load_config
 from src.utils.legal_safety import requires_human_review, route_legal_service
+from src.utils.query_guard import (
+    classify_query_intent,
+    filter_relevant_items,
+    insufficient_context_answer,
+)
 
 
 config = load_config()
 
 MODEL_NAME = config["model"]["name"]
 TEMPERATURE = config["model"]["temperature"]
+MAX_TOKENS = config["model"]["max_tokens"]
+HISTORY_TURNS = config["model"]["history_turns"]
 EMBEDDING_MODEL = config["embedding"]["model"]
 CHUNK_SIZE = config["chunking"]["chunk_size"]
 CHUNK_OVERLAP = config["chunking"]["chunk_overlap"]
 VECTOR_STORE_PATH = config["vector_store"]["path"]
 SYSTEM_PROMPT = config["prompts"]["system"]
 LEGAL_DISCLAIMER = config["legal"]["disclaimer"]
+N_RESULTS = config["retrieval"]["n_results"]
+MAX_DISTANCE = config["retrieval"].get("max_distance")
 
 
 st.set_page_config(
@@ -43,10 +52,10 @@ st.set_page_config(
 )
 
 
-def format_context(retrieved_items):
+def format_context(retrieved_items, query_intent):
     """Build source-labelled context for the LLM."""
 
-    formatted = []
+    formatted = [f"Query intent: {query_intent}"]
     for index, item in enumerate(retrieved_items, start=1):
         formatted.append(
             f"Source [{index}] - {item['source']} | chunk {item['chunk']}:\n{item['text']}"
@@ -94,7 +103,13 @@ if "vector_store" not in st.session_state:
     )
 
 vector_store = st.session_state.vector_store
-llm = LLM(model_name=MODEL_NAME, system_prompt=SYSTEM_PROMPT, temperature=TEMPERATURE)
+llm = LLM(
+    model_name=MODEL_NAME,
+    system_prompt=SYSTEM_PROMPT,
+    temperature=TEMPERATURE,
+    max_tokens=MAX_TOKENS,
+    history_turns=HISTORY_TURNS,
+)
 history_manager = ConversationHistory()
 
 
@@ -233,34 +248,33 @@ if query:
     with st.chat_message("user"):
         st.write(query)
 
-    retrieved_items = vector_store.query_with_sources(query)
-    context_items = format_context(retrieved_items)
-    retrieved_text = "\n\n".join(item["text"] for item in retrieved_items)
+    retrieved_items = vector_store.query_with_sources(query, n_results=N_RESULTS)
+    relevant_items = filter_relevant_items(query, retrieved_items, max_distance=MAX_DISTANCE)
+    query_intent = classify_query_intent(query)
+    context_items = format_context(relevant_items, query_intent)
+    retrieved_text = "\n\n".join(item["text"] for item in relevant_items)
     recommended_service = route_legal_service(query, retrieved_text)
     human_review_needed = requires_human_review(query, retrieved_text)
 
-    if not retrieved_items:
-        answer = (
-            "I could not find enough relevant information in the uploaded or indexed documents to answer safely. "
-            "Please upload the relevant contract, policy, guidance, or template, and consider asking a licensed lawyer "
-            "for jurisdiction-specific advice."
-        )
+    if not relevant_items:
+        answer = insufficient_context_answer(query, retrieved_items)
     else:
-        answer = llm.generate(query, context_items, history)
+        with st.spinner("Analyzing the retrieved document context..."):
+            answer = llm.generate(query, context_items, history)
 
         safety_footer = [
             "",
             "---",
-            f"Suggested service route: {recommended_service}.",
+            f"Service route: {recommended_service}.",
         ]
 
         if human_review_needed:
             safety_footer.append(
-                "Human legal review recommended: this appears to involve higher-risk legal, financial, employment, data protection, or signature-related consequences."
+                "Human review recommended for this issue."
             )
 
         safety_footer.append(
-            "Reminder: this is legal information and triage support, not definitive legal advice."
+            "Note: legal information and triage support only, not definitive legal advice."
         )
 
         answer = f"{answer}\n" + "\n".join(safety_footer)
@@ -271,9 +285,9 @@ if query:
     history_manager.save_interaction(chat_id, query, answer)
 
     with st.expander("Retrieved sources"):
-        if not retrieved_items:
-            st.write("No sources retrieved.")
-        for index, item in enumerate(retrieved_items, start=1):
+        if not relevant_items:
+            st.write("No directly relevant sources found for this question.")
+        for index, item in enumerate(relevant_items, start=1):
             st.markdown(f"**Source [{index}] - {item['source']} | chunk {item['chunk']}**")
             st.write(item["text"])
             if item["distance"] is not None:

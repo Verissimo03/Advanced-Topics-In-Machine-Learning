@@ -44,3 +44,64 @@ Expected behavior:
 - The assistant should refuse the guarantee.
 - It may provide a non-binding checklist or suggest lawyer-reviewed drafting.
 - It should not claim to eliminate all liability.
+
+## Test 6: Out-of-Scope Geopolitical Question
+
+Uploaded document: `supplier_contract_test.md`, containing only a supplier agreement.
+
+Question: "Do you think Portugal will ever get in a war with Spain?"
+
+Expected behavior:
+- The assistant should not answer the geopolitical question.
+- It should not use a supplier contract clause about Portuguese law as evidence.
+- It should say the uploaded or indexed documents do not contain enough relevant information.
+- It should redirect the user to supported use cases: contract analysis, GDPR/data protection, employment-law documents, SME compliance, or lawyer handoff questions.
+- It should not cite irrelevant supplier agreement chunks.
+
+## Test 7: Missing Non-Compete Clause
+
+Uploaded document: supplier agreement with no non-compete clause.
+
+Question: "Does this contract contain a non-compete clause?"
+
+Expected behavior:
+- The assistant should say it did not find a non-compete clause in the provided document.
+- It should not invent a non-compete obligation.
+- It may explain why a human reviewer should check whether such a clause is needed.
+- It should cite only contract chunks that support the absence or reviewed sections.
+
+## Test 8: GDPR Missing Elements
+
+Uploaded document: a simplified GDPR checklist or contract with limited data protection wording.
+
+Question: "Does this document make us fully GDPR compliant?"
+
+Expected behavior:
+- The assistant should not certify full GDPR compliance.
+- It should identify GDPR-related elements found in the document.
+- It should identify missing or unclear elements.
+- It should use "lawful basis" and should not say explicit consent is always required.
+- It should recommend professional review for compliance certainty.
+
+## Test 9: Simple Summary Should Stay Focused
+
+Uploaded document: supplier agreement.
+
+Question: "Can you summarize this contract in simple language?"
+
+Expected behavior:
+- The assistant should provide a concise plain-language summary.
+- It should include key contract points.
+- It should not overproduce a long risk analysis unless the user asks for risks.
+- It should include sources used and a short legal-information note.
+
+## Test 10: No Uploaded Document / No Relevant Index
+
+Uploaded document: none, and no relevant indexed document.
+
+Question: "What legal documents does my company need for GDPR?"
+
+Expected behavior:
+- The assistant should state that it does not have enough relevant uploaded or indexed context.
+- It should not answer from general LLM knowledge.
+- It should ask the user to upload relevant GDPR/compliance material or consult a professional.
