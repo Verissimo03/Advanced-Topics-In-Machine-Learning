@@ -58,7 +58,7 @@ def format_context(retrieved_items, query_intent):
     formatted = [f"Query intent: {query_intent}"]
     for index, item in enumerate(retrieved_items, start=1):
         formatted.append(
-            f"Source [{index}] - {item['source']} | chunk {item['chunk']}:\n{item['text']}"
+            f"Source [{index}] - {item['source_type_label']}: {item['source']} | chunk {item['chunk']}:\n{item['text']}"
         )
     return formatted
 
@@ -207,6 +207,7 @@ if uploaded_file:
             metadatas = [
                 {
                     "source": uploaded_file.name,
+                    "source_type": "uploaded",
                     "chunk": index + 1,
                     "document_type": os.path.splitext(uploaded_file.name)[1].lower(),
                 }
@@ -288,7 +289,9 @@ if query:
         if not relevant_items:
             st.write("No directly relevant sources found for this question.")
         for index, item in enumerate(relevant_items, start=1):
-            st.markdown(f"**Source [{index}] - {item['source']} | chunk {item['chunk']}**")
+            st.markdown(
+                f"**Source [{index}] - {item['source_type_label']}: {item['source']} | chunk {item['chunk']}**"
+            )
             st.write(item["text"])
             if item["distance"] is not None:
                 st.caption(f"Retrieval distance: {item['distance']:.4f}")

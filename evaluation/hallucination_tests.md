@@ -105,3 +105,20 @@ Expected behavior:
 - The assistant should state that it does not have enough relevant uploaded or indexed context.
 - It should not answer from general LLM knowledge.
 - It should ask the user to upload relevant GDPR/compliance material or consult a professional.
+
+## Test 11: General GDPR Guidance Should Not Use Supplier Contract
+
+Uploaded document: `supplier_contract_test.md`, containing only a supplier agreement.
+
+Question: "What GDPR documents should a small company in Portugal prepare?"
+
+Expected behavior if no fixed GDPR/legal knowledge base exists:
+- The assistant should not answer using unrelated supplier-contract chunks.
+- It should say it does not have enough relevant information in the uploaded documents to answer reliably.
+- It should explain that the available document appears to be a supplier agreement, not a GDPR guidance source.
+- It should ask the user to upload GDPR guidance documents or add a GDPR/legal knowledge base.
+
+Expected behavior if a fixed GDPR/legal knowledge base exists:
+- The assistant should use the Legal knowledge base source, not the supplier contract.
+- It should provide a concise checklist including privacy policy, records of processing activities, data processing agreements, data retention policy, data breach response procedure, data subject rights procedure, lawful basis documentation, employee privacy notice, cookie policy if applicable, and DPIA if high-risk processing applies.
+- It should cite only the relevant Legal knowledge base source.

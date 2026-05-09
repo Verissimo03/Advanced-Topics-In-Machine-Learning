@@ -52,6 +52,28 @@ SUPPORTED_ACTION_TERMS = {
     "summary",
 }
 
+DOCUMENT_REFERENCE_TERMS = {
+    "agreement",
+    "clause",
+    "contract",
+    "document",
+    "file",
+    "policy",
+    "this",
+    "uploaded",
+}
+
+GENERAL_GUIDANCE_TERMS = {
+    "checklist",
+    "documents",
+    "prepare",
+    "required",
+    "requirements",
+    "should",
+    "small company",
+    "sme",
+}
+
 OUT_OF_SCOPE_TERMS = {
     "army",
     "battle",
@@ -124,10 +146,35 @@ def classify_query_intent(question: str) -> str:
     if any(term in question_lower for term in ["risk", "risky", "red flag", "before signing"]):
         return "risk"
     if any(term in question_lower for term in ["gdpr", "data protection", "privacy", "personal data"]):
+        if is_general_guidance_question(question):
+            return "gdpr_general_guidance"
         return "gdpr"
     if any(term in question_lower for term in ["missing", "not include", "does it contain", "non-compete"]):
         return "missing_information"
     return "general_legal_triage"
+
+
+def is_general_guidance_question(question: str) -> bool:
+    """
+    Return True when a GDPR/legal question asks for general guidance rather than
+    analysis of a specific uploaded document.
+    """
+
+    question_lower = question.lower()
+    tokens = tokenize(question)
+
+    has_general_guidance = bool(tokens & GENERAL_GUIDANCE_TERMS) or any(
+        phrase in question_lower for phrase in GENERAL_GUIDANCE_TERMS if " " in phrase
+    )
+    has_document_reference = bool(tokens & DOCUMENT_REFERENCE_TERMS)
+
+    if "gdpr" in question_lower and has_general_guidance and not has_document_reference:
+        return True
+
+    if "what" in tokens and {"documents", "prepare"} & tokens and not has_document_reference:
+        return True
+
+    return False
 
 
 def is_supported_scope(question: str) -> bool:
@@ -168,9 +215,15 @@ def filter_relevant_items(question: str, retrieved_items: list[dict], max_distan
     intent = classify_query_intent(question)
     filtered = []
 
+    if intent == "gdpr_general_guidance":
+        return [
+            item
+            for item in retrieved_items
+            if item.get("source_type") == "knowledge_base" and _passes_distance(item, max_distance)
+        ]
+
     for item in retrieved_items:
-        distance = item.get("distance")
-        if max_distance is not None and distance is not None and distance > max_distance:
+        if not _passes_distance(item, max_distance):
             continue
 
         item_tokens = tokenize(item.get("text", ""))
@@ -186,6 +239,13 @@ def filter_relevant_items(question: str, retrieved_items: list[dict], max_distan
                 filtered.append(item)
 
     return filtered
+
+
+def _passes_distance(item: dict, max_distance: float | None) -> bool:
+    """Return True if a retrieved item passes the configured distance threshold."""
+
+    distance = item.get("distance")
+    return not (max_distance is not None and distance is not None and distance > max_distance)
 
 
 def insufficient_context_answer(question: str, retrieved_items: list[dict] | None = None) -> str:

@@ -139,6 +139,10 @@ class VectorStore:
             retrieved.append({
                 "text": document,
                 "source": metadata.get("source", "Uploaded document"),
+                "source_type": metadata.get("source_type", "uploaded"),
+                "source_type_label": "Legal knowledge base"
+                if metadata.get("source_type") == "knowledge_base"
+                else "Uploaded document",
                 "chunk": metadata.get("chunk", i + 1),
                 "distance": distance
             })
