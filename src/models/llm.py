@@ -44,7 +44,7 @@ class LLM:
         })
 
         # conversation history
-        if history:
+        if history and self.history_turns > 0:
             for turn in history[-self.history_turns:]:
                 messages.append({"role": "user", "content": turn["question"]})
                 answer = turn["answer"]
@@ -89,36 +89,24 @@ Question:
             source = item.get("source", "Unknown source")
             chunk = item.get("chunk", index)
             text = item.get("text", "")
+            if len(text) > 900:
+                text = f"{text[:900]}..."
             source_blocks.append(
                 f"Source [{index}] - {source_type}: {source} | chunk {chunk}\n{text}"
             )
 
         prompt = f"""
-You are a strict relevance and safety classifier for an SME legal/compliance RAG assistant.
+Classify whether an SME legal/compliance RAG assistant can answer.
 
-Supported domain:
-- contract analysis
-- GDPR/data protection
-- employment-law document triage
-- SME compliance
-- legal risk identification
-- missing information in legal/business documents
-- lawyer handoff recommendations
-- general legal services triage for SMEs in Portugal/EU
+Supported: contract review, GDPR/data protection, employment documents, SME compliance, legal risk, missing clauses, lawyer handoff.
+Unsupported: geopolitics, medicine, sports, trivia, or unrelated questions.
 
-Unsupported domain:
-- geopolitics
-- medical advice
-- sports
-- general trivia
-- questions unrelated to the retrieved legal/compliance documents or legal knowledge base
-
-Decision rules:
-- Judge semantic relevance, not only keyword overlap.
-- Broad contract-review questions can be relevant to an uploaded contract even if the exact words are not in the document.
-- A general legal/GDPR guidance question requires a relevant Legal knowledge base source. Do not use an unrelated uploaded contract as general legal guidance.
-- If sources are partially relevant, allow a limited answer only for what the sources support.
-- Do not rely on the model's internal legal knowledge.
+Rules:
+- Judge semantic relevance, not only word overlap.
+- Uploaded contracts are relevant for summaries, risks, signing review, clause presence/absence, missing information, and lawyer handoff.
+- General GDPR guidance needs a Legal knowledge base source, not an unrelated uploaded contract.
+- Allow partial answers when sources support part of the question.
+- Do not rely on model memory.
 
 Return only valid JSON with this schema:
 {{
@@ -145,7 +133,7 @@ Retrieved sources:
                 format="json",
                 options={
                     "temperature": 0,
-                    "num_predict": 220,
+                    "num_predict": 120,
                 },
             )
             assessment = json.loads(response["message"]["content"])
@@ -158,6 +146,7 @@ Retrieved sources:
                 "usable_source_numbers": [],
                 "human_review_recommended": True,
                 "reason": "The relevance assessment could not be completed safely.",
+                "parse_error": True,
             }
 
         assessment.setdefault("domain_relevance", "unsupported")
@@ -167,5 +156,6 @@ Retrieved sources:
         assessment.setdefault("usable_source_numbers", [])
         assessment.setdefault("human_review_recommended", False)
         assessment.setdefault("reason", "")
+        assessment["parse_error"] = False
 
         return assessment

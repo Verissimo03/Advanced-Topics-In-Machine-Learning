@@ -77,6 +77,14 @@ class VectorStore:
 
         self.collection.add(**add_kwargs)
 
+    def delete_by_source(self, source: str):
+        """Delete all chunks for a source file before re-indexing it."""
+
+        try:
+            self.collection.delete(where={"source": source})
+        except Exception:
+            pass
+
     def query(self, query_text: str, n_results: int = 3):
         """
         Retrieve relevant documents from the vector store.
@@ -144,6 +152,7 @@ class VectorStore:
                 if metadata.get("source_type") == "knowledge_base"
                 else "Uploaded document",
                 "chunk": metadata.get("chunk", i + 1),
+                "section_title": metadata.get("section_title", ""),
                 "distance": distance
             })
 

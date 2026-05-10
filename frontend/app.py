@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -22,9 +23,15 @@ from src.utils.chunker import TextChunker
 from src.utils.config_loader import load_config
 from src.utils.legal_safety import requires_human_review, route_legal_service
 from src.utils.query_guard import (
+    can_use_fast_document_path,
     classify_query_intent,
+    can_use_document_fallback,
+    get_document_fallback_sources,
     insufficient_context_answer,
+    is_supported_scope,
+    normalize_answer_mode,
     select_assessed_sources,
+    service_route_for_mode,
     should_refuse_assessment,
 )
 
@@ -59,8 +66,9 @@ def format_context(retrieved_items, query_intent):
     formatted = [f"Query intent: {query_intent}"]
     for index, item in enumerate(retrieved_items, start=1):
         source_type_label = item.get("source_type_label", "Uploaded document")
+        section_title = item.get("section_title") or "Unknown section"
         formatted.append(
-            f"Source [{index}] - {source_type_label}: {item['source']} | chunk {item['chunk']}:\n{item['text']}"
+            f"Source [{index}] - {source_type_label}: {item['source']} | section: {section_title} | chunk {item['chunk']}:\n{item['text']}"
         )
     return formatted
 
@@ -95,23 +103,43 @@ Use this prototype to review contracts, explore GDPR obligations, identify missi
 )
 
 
-loader = DocumentLoader()
-chunker = TextChunker(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+@st.cache_resource
+def get_loader():
+    return DocumentLoader()
 
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = VectorStore(
-        persist_directory=VECTOR_STORE_PATH,
-        embedding_model=EMBEDDING_MODEL,
+
+@st.cache_resource
+def get_chunker(chunk_size, chunk_overlap):
+    return TextChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+
+@st.cache_resource
+def get_vector_store(persist_directory, embedding_model):
+    return VectorStore(
+        persist_directory=persist_directory,
+        embedding_model=embedding_model,
     )
 
+
+@st.cache_resource
+def get_llm(model_name, system_prompt, temperature, max_tokens, history_turns):
+    return LLM(
+        model_name=model_name,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        history_turns=history_turns,
+    )
+
+
+loader = get_loader()
+chunker = get_chunker(CHUNK_SIZE, CHUNK_OVERLAP)
+
+if "vector_store" not in st.session_state:
+    st.session_state.vector_store = get_vector_store(VECTOR_STORE_PATH, EMBEDDING_MODEL)
+
 vector_store = st.session_state.vector_store
-llm = LLM(
-    model_name=MODEL_NAME,
-    system_prompt=SYSTEM_PROMPT,
-    temperature=TEMPERATURE,
-    max_tokens=MAX_TOKENS,
-    history_turns=HISTORY_TURNS,
-)
+llm = get_llm(MODEL_NAME, SYSTEM_PROMPT, TEMPERATURE, MAX_TOKENS, HISTORY_TURNS)
 history_manager = ConversationHistory()
 
 
@@ -193,32 +221,79 @@ with st.sidebar:
 
 
 if uploaded_file:
-    if "last_file" not in st.session_state:
-        st.session_state.last_file = None
+    file_bytes = uploaded_file.getvalue()
+    file_digest = hashlib.sha256(file_bytes).hexdigest()
 
-    if uploaded_file.name != st.session_state.last_file:
-        st.session_state.last_file = uploaded_file.name
+    if st.session_state.get("last_file_digest") != file_digest:
+        st.session_state.last_file_digest = file_digest
+        ingest_start = time.perf_counter()
 
         with st.spinner("Reading, chunking, embedding, and indexing the document..."):
-            file_path = save_uploaded_file(uploaded_file)
-            text = loader.load(file_path)
-            chunks = chunker.split(text)
+            file_path = os.path.join("data/raw", os.path.basename(uploaded_file.name))
+            os.makedirs("data/raw", exist_ok=True)
+            with open(file_path, "wb") as file:
+                file.write(file_bytes)
 
-            file_hash = hashlib.sha256(uploaded_file.name.encode("utf-8")).hexdigest()[:10]
+            load_start = time.perf_counter()
+            text = loader.load(file_path)
+            load_seconds = time.perf_counter() - load_start
+
+            chunk_start = time.perf_counter()
+            chunk_records = chunker.split_with_metadata(text)
+            chunks = [chunk["text"] for chunk in chunk_records]
+            chunk_seconds = time.perf_counter() - chunk_start
+
+            file_hash = hashlib.sha256(f"{uploaded_file.name}:{file_digest}".encode("utf-8")).hexdigest()[:10]
             ids = [f"{file_hash}_chunk_{index}" for index in range(len(chunks))]
             metadatas = [
                 {
                     "source": uploaded_file.name,
                     "source_type": "uploaded",
                     "chunk": index + 1,
+                    "section_title": chunk["section_title"],
+                    "section_index": chunk["section_index"],
+                    "chunk_in_section": chunk["chunk_in_section"],
+                    "chunk_chars": chunk["chunk_chars"],
                     "document_type": os.path.splitext(uploaded_file.name)[1].lower(),
                 }
-                for index in range(len(chunks))
+                for index, chunk in enumerate(chunk_records)
             ]
 
+            index_start = time.perf_counter()
+            vector_store.delete_by_source(uploaded_file.name)
             vector_store.add_documents(documents=chunks, ids=ids, metadatas=metadatas)
+            index_seconds = time.perf_counter() - index_start
+            total_ingest_seconds = time.perf_counter() - ingest_start
 
-        st.success(f"Document indexed successfully: {len(chunks)} chunks stored.")
+        st.success(
+            f"Document indexed successfully: {len(chunks)} chunks stored "
+            f"({total_ingest_seconds:.2f}s total)."
+        )
+        st.session_state.last_ingest_timings = {
+            "document_loading": round(load_seconds, 3),
+            "chunking": round(chunk_seconds, 3),
+            "embedding_and_indexing": round(index_seconds, 3),
+            "total_ingestion": round(total_ingest_seconds, 3),
+        }
+        st.session_state.last_chunk_debug = [
+            {
+                "chunk": index + 1,
+                "section_title": chunk["section_title"],
+                "section_index": chunk["section_index"],
+                "chunk_in_section": chunk["chunk_in_section"],
+                "chunk_chars": chunk["chunk_chars"],
+                "preview": chunk["text"][:100],
+                "source": uploaded_file.name,
+                "source_type": "uploaded",
+                "document_type": os.path.splitext(uploaded_file.name)[1].lower(),
+            }
+            for index, chunk in enumerate(chunk_records)
+        ]
+
+    if st.session_state.get("last_chunk_debug"):
+        with st.expander("Debug: uploaded document chunks"):
+            st.write(f"Total chunks created: {len(st.session_state.last_chunk_debug)}")
+            st.dataframe(st.session_state.last_chunk_debug, use_container_width=True)
 
 
 st.markdown("## SME Legal Triage Chat")
@@ -248,17 +323,53 @@ for turn in history:
 query = st.chat_input("Ask about contracts, GDPR, employment, compliance, or legal risk...")
 
 if query:
+    total_start = time.perf_counter()
+    timings = {}
+
     with st.chat_message("user"):
         st.write(query)
 
+    retrieval_start = time.perf_counter()
     retrieved_items = vector_store.query_with_sources(query, n_results=N_RESULTS)
+    timings["retrieval"] = round(time.perf_counter() - retrieval_start, 3)
     relevant_items = []
+    assessment = None
+    refusal_reason = ""
+    used_fast_path = False
 
     if not retrieved_items:
+        refusal_reason = "No chunks were retrieved from the vector store."
         answer = insufficient_context_answer(query, retrieved_items)
+    elif not is_supported_scope(query):
+        refusal_reason = "Question is outside the supported SME legal/compliance scope."
+        answer = insufficient_context_answer(query, retrieved_items)
+    elif (
+        classify_query_intent(query) == "gdpr_general_guidance"
+        and not any(item.get("source_type") == "knowledge_base" for item in retrieved_items)
+    ):
+        refusal_reason = "General GDPR guidance requires a legal knowledge base source, not only uploaded documents."
+        answer = insufficient_context_answer(query, retrieved_items)
+    elif can_use_fast_document_path(query, retrieved_items):
+        used_fast_path = True
+        relevant_items = get_document_fallback_sources(query, retrieved_items)
+        assessment = {
+            "domain_relevance": "supported",
+            "source_relevance": "relevant",
+            "context_sufficiency": "sufficient",
+            "answer_mode": classify_query_intent(query),
+            "usable_source_numbers": [retrieved_items.index(item) + 1 for item in relevant_items],
+            "human_review_recommended": requires_human_review(
+                query,
+                "\n\n".join(item["text"] for item in relevant_items),
+            ),
+            "reason": "Fast path: supported document-analysis query with uploaded legal-document chunks.",
+            "parse_error": False,
+        }
     else:
+        assessment_start = time.perf_counter()
         with st.spinner("Checking whether the retrieved sources can answer safely..."):
             assessment = llm.assess_context(query, retrieved_items)
+        timings["relevance_assessment"] = round(time.perf_counter() - assessment_start, 3)
 
         relevant_items = select_assessed_sources(
             retrieved_items,
@@ -266,19 +377,40 @@ if query:
         )
 
         if should_refuse_assessment(assessment) or not relevant_items:
-            answer = insufficient_context_answer(query, retrieved_items)
-        else:
-            query_intent = assessment.get("answer_mode") or classify_query_intent(query)
+            if can_use_document_fallback(query, retrieved_items):
+                used_fast_path = True
+                relevant_items = get_document_fallback_sources(query, retrieved_items)
+                assessment["domain_relevance"] = "supported"
+                assessment["source_relevance"] = "partially_relevant"
+                assessment["context_sufficiency"] = "sufficient"
+                assessment["answer_mode"] = normalize_answer_mode(assessment.get("answer_mode"), query)
+                assessment["usable_source_numbers"] = [
+                    retrieved_items.index(item) + 1 for item in relevant_items
+                ]
+                assessment["reason"] = (
+                    "Used deterministic document-analysis fallback because the question is a supported "
+                    "legal-document task and uploaded contract-like chunks were retrieved."
+                )
+            else:
+                refusal_reason = assessment.get("reason", "The retrieved context was not relevant or sufficient.")
+                answer = insufficient_context_answer(query, retrieved_items)
+
+        if relevant_items:
+            assessment["answer_mode"] = normalize_answer_mode(assessment.get("answer_mode"), query)
+
+            query_intent = assessment["answer_mode"]
             context_items = format_context(relevant_items, query_intent)
             retrieved_text = "\n\n".join(item["text"] for item in relevant_items)
-            recommended_service = route_legal_service(query, retrieved_text)
+            recommended_service = service_route_for_mode(query_intent, query)
             human_review_needed = assessment.get("human_review_recommended") or requires_human_review(
                 query,
                 retrieved_text,
             )
 
+            generation_start = time.perf_counter()
             with st.spinner("Analyzing the retrieved document context..."):
                 answer = llm.generate(query, context_items, history)
+            timings["answer_generation"] = round(time.perf_counter() - generation_start, 3)
 
             safety_footer = [
                 "",
@@ -296,6 +428,38 @@ if query:
             )
 
             answer = f"{answer}\n" + "\n".join(safety_footer)
+
+    if relevant_items and "answer_generation" not in timings:
+        query_intent = normalize_answer_mode(assessment.get("answer_mode"), query)
+        context_items = format_context(relevant_items, query_intent)
+        retrieved_text = "\n\n".join(item["text"] for item in relevant_items)
+        recommended_service = service_route_for_mode(query_intent, query)
+        human_review_needed = assessment.get("human_review_recommended") or requires_human_review(
+            query,
+            retrieved_text,
+        )
+
+        generation_start = time.perf_counter()
+        with st.spinner("Analyzing the retrieved document context..."):
+            answer = llm.generate(query, context_items, history)
+        timings["answer_generation"] = round(time.perf_counter() - generation_start, 3)
+
+        safety_footer = [
+            "",
+            "---",
+            f"Service route: {recommended_service}.",
+        ]
+
+        if human_review_needed:
+            safety_footer.append("Human review recommended for this issue.")
+
+        safety_footer.append(
+            "Note: legal information and triage support only, not definitive legal advice."
+        )
+
+        answer = f"{answer}\n" + "\n".join(safety_footer)
+
+    timings["total_response"] = round(time.perf_counter() - total_start, 3)
     with st.chat_message("assistant"):
         st.write(answer)
 
@@ -306,10 +470,25 @@ if query:
             st.write("No directly relevant sources found for this question.")
         for index, item in enumerate(relevant_items, start=1):
             source_type_label = item.get("source_type_label", "Uploaded document")
+            section_title = item.get("section_title") or "Unknown section"
             st.markdown(
-                f"**Source [{index}] - {source_type_label}: {item['source']} | chunk {item['chunk']}**"
+                f"**Source [{index}] - {source_type_label}: {item['source']} | section: {section_title} | chunk {item['chunk']}**"
             )
             st.write(item["text"])
             if item["distance"] is not None:
                 st.caption(f"Retrieval distance: {item['distance']:.4f}")
             st.markdown("---")
+
+    with st.expander("Debug: relevance decision"):
+        st.write(f"Retrieved chunk count: {len(retrieved_items)}")
+        st.write(f"Accepted source count: {len(relevant_items)}")
+        st.write(f"Fast document path used: {used_fast_path}")
+        if refusal_reason:
+            st.write(f"Refusal reason: {refusal_reason}")
+        if st.session_state.get("last_ingest_timings"):
+            st.write("Last ingestion timings")
+            st.json(st.session_state.last_ingest_timings)
+        st.write("Current query timings")
+        st.json(timings)
+        if assessment:
+            st.json(assessment)

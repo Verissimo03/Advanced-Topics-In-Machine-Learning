@@ -2,9 +2,19 @@
 Smoke tests for local RAG components that do not require a running Ollama server.
 """
 
+import json
+
+from src.memory.conversation_history import ConversationHistory
 from src.utils.chunker import TextChunker
 from src.utils.legal_safety import requires_human_review, route_legal_service
-from src.utils.query_guard import classify_query_intent, filter_relevant_items, insufficient_context_answer
+from src.utils.query_guard import (
+    can_use_document_fallback,
+    classify_query_intent,
+    filter_relevant_items,
+    insufficient_context_answer,
+    normalize_answer_mode,
+    service_route_for_mode,
+)
 
 
 def test_chunker_splits_long_text():
@@ -15,6 +25,40 @@ def test_chunker_splits_long_text():
 
     assert len(chunks) > 1
     assert all(chunk.strip() for chunk in chunks)
+
+
+def test_chunker_preserves_legal_section_titles():
+    text = """
+# Supplier Agreement
+
+## Payment Terms
+
+The client must pay invoices within 30 days.
+
+## Termination
+
+Either party may terminate with 15 days written notice.
+"""
+    chunker = TextChunker(chunk_size=300, chunk_overlap=40)
+
+    chunks = chunker.split_with_metadata(text)
+    titles = {chunk["section_title"] for chunk in chunks}
+
+    assert "Payment Terms" in titles
+    assert "Termination" in titles
+    assert any("Payment Terms" in chunk["text"] for chunk in chunks)
+
+
+def test_chunker_splits_long_section_with_overlap_metadata():
+    text = "## Liability\n\n" + ("The supplier limits liability for direct damages only. " * 40)
+    chunker = TextChunker(chunk_size=180, chunk_overlap=40)
+
+    chunks = chunker.split_with_metadata(text)
+
+    assert len(chunks) > 1
+    assert all(chunk["section_title"] == "Liability" for chunk in chunks)
+    assert chunks[0]["chunk_in_section"] == 1
+    assert chunks[1]["chunk_in_section"] == 2
 
 
 def test_legal_safety_flags_high_risk_signature_question():
@@ -119,3 +163,53 @@ def test_signing_related_contract_questions_are_supported():
                 }
             ],
         )
+
+
+def test_document_fallback_allows_general_contract_review_intents():
+    retrieved_items = [
+        {
+            "text": "This supplier agreement includes payment terms, liability, termination, confidentiality, data protection, and governing law.",
+            "source": "supplier_contract_test.md",
+            "source_type": "uploaded",
+            "chunk": 1,
+            "distance": 0.2,
+        }
+    ]
+
+    assert can_use_document_fallback("Summarize this contract in simple terms.", retrieved_items)
+    assert can_use_document_fallback("Does this contract include a non-compete clause?", retrieved_items)
+    assert can_use_document_fallback("Does this contract contain GDPR-related risks?", retrieved_items)
+
+
+def test_document_fallback_does_not_allow_out_of_scope_question():
+    retrieved_items = [
+        {
+            "text": "This supplier agreement is governed by Portuguese law.",
+            "source": "supplier_contract_test.md",
+            "source_type": "uploaded",
+            "chunk": 1,
+            "distance": 0.2,
+        }
+    ]
+
+    assert not can_use_document_fallback("Do you think Portugal will ever get in a war with Spain?", retrieved_items)
+
+
+def test_answer_mode_normalization_and_service_routes():
+    assert normalize_answer_mode("summarize_document", "Summarize this contract") == "summary"
+    assert normalize_answer_mode("missing_information_scan", "Does this contract include a non-compete clause?") == "missing_information"
+    assert normalize_answer_mode("gdpr_data_protection_review", "Does this contract contain GDPR risks?") == "gdpr"
+
+    assert service_route_for_mode("summary") == "Contract summary / general contract review"
+    assert service_route_for_mode("missing_information") == "Clause presence / missing clause scan"
+    assert service_route_for_mode("gdpr") == "GDPR / data protection review"
+    assert service_route_for_mode("lawyer_handoff") == "Lawyer handoff checklist"
+    assert service_route_for_mode("risk") == "Contract risk review"
+
+
+def test_create_new_chat_after_deleted_lower_number(tmp_path):
+    history_path = tmp_path / "chat_history.json"
+    history_path.write_text(json.dumps({"chat_2": []}))
+    history = ConversationHistory(path=str(history_path))
+
+    assert history.create_new_chat() == "chat_3"

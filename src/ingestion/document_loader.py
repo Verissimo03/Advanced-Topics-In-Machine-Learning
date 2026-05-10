@@ -57,7 +57,9 @@ class DocumentLoader:
         text = ""
 
         for page in reader.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                text += page_text.strip() + "\n\n"
 
         return text
 

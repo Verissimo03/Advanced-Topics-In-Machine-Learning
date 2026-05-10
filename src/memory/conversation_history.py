@@ -6,6 +6,7 @@ Stores and retrieves chat history for the RAG assistant.
 
 import json
 import os
+import re
 
 
 class ConversationHistory:
@@ -48,7 +49,20 @@ class ConversationHistory:
 
     def create_new_chat(self):
         data = self.load_all()
-        new_id = f"chat_{len(data) + 1}"
+        chat_numbers = []
+
+        for chat_id in data.keys():
+            match = re.fullmatch(r"chat_(\d+)", chat_id)
+            if match:
+                chat_numbers.append(int(match.group(1)))
+
+        next_number = max(chat_numbers, default=0) + 1
+        new_id = f"chat_{next_number}"
+
+        while new_id in data:
+            next_number += 1
+            new_id = f"chat_{next_number}"
+
         data[new_id] = []
 
         with open(self.path, "w") as f:

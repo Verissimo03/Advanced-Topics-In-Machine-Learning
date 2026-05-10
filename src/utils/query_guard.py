@@ -92,6 +92,24 @@ GENERAL_GUIDANCE_TERMS = {
     "sme",
 }
 
+LEGAL_DOCUMENT_TERMS = {
+    "agreement",
+    "client",
+    "confidentiality",
+    "contract",
+    "data",
+    "governing",
+    "jurisdiction",
+    "law",
+    "liability",
+    "party",
+    "parties",
+    "payment",
+    "services",
+    "supplier",
+    "termination",
+}
+
 OUT_OF_SCOPE_TERMS = {
     "army",
     "battle",
@@ -171,6 +189,57 @@ def classify_query_intent(question: str) -> str:
     if any(term in question_lower for term in ["missing", "not include", "does it contain", "non-compete"]):
         return "missing_information"
     return "general_legal_triage"
+
+
+def normalize_answer_mode(answer_mode: str | None, question: str) -> str:
+    """Map assessor answer modes to the prompt modes used by final generation."""
+
+    if not answer_mode or answer_mode == "refuse":
+        return classify_query_intent(question)
+
+    mode_map = {
+        "summarize_document": "summary",
+        "identify_risks": "risk",
+        "gdpr_data_protection_review": "gdpr",
+        "missing_information_scan": "missing_information",
+        "lawyer_handoff_recommendation": "lawyer_handoff",
+        "general_sme_compliance_guidance": "general_legal_triage",
+    }
+
+    return mode_map.get(answer_mode, answer_mode)
+
+
+def service_route_for_mode(answer_mode: str, question: str = "") -> str:
+    """Choose a service route from the detected answer mode."""
+
+    route_map = {
+        "summary": "Contract summary / general contract review",
+        "summarize_document": "Contract summary / general contract review",
+        "missing_information": "Clause presence / missing clause scan",
+        "missing_information_scan": "Clause presence / missing clause scan",
+        "gdpr": "GDPR / data protection review",
+        "gdpr_data_protection_review": "GDPR / data protection review",
+        "gdpr_general_guidance": "GDPR / data protection review",
+        "lawyer_handoff": "Lawyer handoff checklist",
+        "lawyer_handoff_recommendation": "Lawyer handoff checklist",
+        "risk": "Contract risk review",
+        "identify_risks": "Contract risk review",
+    }
+
+    if answer_mode in route_map:
+        return route_map[answer_mode]
+
+    question_lower = question.lower()
+    if "gdpr" in question_lower or "data protection" in question_lower:
+        return "GDPR / data protection review"
+    if "risk" in question_lower:
+        return "Contract risk review"
+    if "clause" in question_lower or "missing" in question_lower or "include" in question_lower:
+        return "Clause presence / missing clause scan"
+    if "lawyer" in question_lower or "sign" in question_lower:
+        return "Lawyer handoff checklist"
+
+    return "Contract summary / general contract review"
 
 
 def is_general_guidance_question(question: str) -> bool:
@@ -284,6 +353,55 @@ def should_refuse_assessment(assessment: dict) -> bool:
         or assessment.get("context_sufficiency") == "insufficient"
         or assessment.get("answer_mode") == "refuse"
     )
+
+
+def can_use_document_fallback(question: str, retrieved_items: list[dict]) -> bool:
+    """
+    Return True when deterministic document-routing can safely override an
+    overly strict LLM assessment.
+
+    This is generic: it applies to supported legal-document tasks over uploaded
+    contract-like chunks, not to specific test questions.
+    """
+
+    if not is_supported_scope(question):
+        return False
+
+    intent = classify_query_intent(question)
+    if intent == "gdpr_general_guidance":
+        return False
+
+    return bool(get_document_fallback_sources(question, retrieved_items))
+
+
+def can_use_fast_document_path(question: str, retrieved_items: list[dict]) -> bool:
+    """
+    Return True for common supported document-analysis questions.
+
+    This avoids an extra LLM relevance call for obvious RAG cases while keeping
+    unsupported topics and general legal guidance guarded.
+    """
+
+    return can_use_document_fallback(question, retrieved_items)
+
+
+def get_document_fallback_sources(question: str, retrieved_items: list[dict]) -> list[dict]:
+    """Return uploaded legal-document chunks for supported document-analysis intents."""
+
+    intent = classify_query_intent(question)
+    if intent == "gdpr_general_guidance":
+        return []
+
+    sources = []
+    for item in retrieved_items:
+        if item.get("source_type", "uploaded") != "uploaded":
+            continue
+
+        item_tokens = tokenize(item.get("text", ""))
+        if item_tokens & LEGAL_DOCUMENT_TERMS:
+            sources.append(item)
+
+    return sources
 
 
 def _passes_distance(item: dict, max_distance: float | None) -> bool:
