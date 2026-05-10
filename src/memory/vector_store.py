@@ -85,6 +85,52 @@ class VectorStore:
         except Exception:
             pass
 
+    def delete_uploaded_documents(self):
+        """Delete all uploaded document chunks from the active collection."""
+
+        try:
+            self.collection.delete(where={"source_type": "uploaded"})
+        except Exception:
+            pass
+
+    def get_source_chunks(self, source: str, limit: int | None = None):
+        """
+        Return chunks for one source ordered by their original chunk number.
+
+        This is useful for summary-style questions, where the opening chunk
+        often contains the contract title, parties, and introductory metadata
+        even when semantic retrieval ranks later clauses higher.
+        """
+
+        if not source:
+            return []
+
+        results = self.collection.get(
+            where={"source": source},
+            include=["documents", "metadatas"],
+        )
+
+        documents = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+
+        chunks = []
+        for index, document in enumerate(documents):
+            metadata = metadatas[index] if index < len(metadatas) and metadatas[index] else {}
+            chunks.append({
+                "text": document,
+                "source": metadata.get("source", source),
+                "source_type": metadata.get("source_type", "uploaded"),
+                "source_type_label": "Legal knowledge base"
+                if metadata.get("source_type") == "knowledge_base"
+                else "Uploaded document",
+                "chunk": metadata.get("chunk", index + 1),
+                "section_title": metadata.get("section_title", ""),
+                "distance": None,
+            })
+
+        chunks.sort(key=lambda item: item.get("chunk", 0))
+        return chunks[:limit] if limit else chunks
+
     def query(self, query_text: str, n_results: int = 3):
         """
         Retrieve relevant documents from the vector store.
@@ -117,7 +163,12 @@ class VectorStore:
 
         return documents[0]  # return list[str]
 
-    def query_with_sources(self, query_text: str, n_results: int = 4):
+    def query_with_sources(
+        self,
+        query_text: str,
+        n_results: int = 4,
+        source_filter: list[str] | None = None,
+    ):
         """
         Retrieve relevant chunks with source metadata for grounded answers.
 
@@ -128,12 +179,28 @@ class VectorStore:
         """
 
         query_text = query_text.lower()
+        where_filter = None
 
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results,
-            include=["documents", "metadatas", "distances"]
-        )
+        if source_filter is not None:
+            clean_sources = [source for source in source_filter if source]
+            if not clean_sources:
+                return []
+            where_filter = (
+                {"source": clean_sources[0]}
+                if len(clean_sources) == 1
+                else {"source": {"$in": clean_sources}}
+            )
+
+        query_kwargs = {
+            "query_texts": [query_text],
+            "n_results": n_results,
+            "include": ["documents", "metadatas", "distances"],
+        }
+
+        if where_filter:
+            query_kwargs["where"] = where_filter
+
+        results = self.collection.query(**query_kwargs)
 
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]

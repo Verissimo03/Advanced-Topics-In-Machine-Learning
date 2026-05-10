@@ -73,6 +73,35 @@ def format_context(retrieved_items, query_intent):
     return formatted
 
 
+def include_intro_chunks_for_summary(retrieved_items, active_sources, query_intent):
+    """
+    Add the opening chunk for summary questions.
+
+    Legal document summaries usually need the document header/intro because
+    that is where parties and effective dates are commonly named. Semantic
+    retrieval may rank clause sections higher, so this keeps summaries grounded
+    in the beginning of the active uploaded document too.
+    """
+
+    if query_intent != "summary":
+        return retrieved_items
+
+    merged = list(retrieved_items)
+    existing_keys = {
+        (item.get("source"), item.get("chunk"))
+        for item in merged
+    }
+
+    for source in active_sources:
+        for intro_chunk in vector_store.get_source_chunks(source, limit=1):
+            chunk_key = (intro_chunk.get("source"), intro_chunk.get("chunk"))
+            if chunk_key not in existing_keys:
+                merged.insert(0, intro_chunk)
+                existing_keys.add(chunk_key)
+
+    return merged
+
+
 def save_uploaded_file(uploaded_file):
     """Persist uploaded content in data/raw and return its path."""
 
@@ -153,6 +182,28 @@ with st.sidebar:
         help="Supported formats: TXT, Markdown, PDF, DOCX.",
     )
 
+    if uploaded_file:
+        st.session_state.active_uploaded_sources = [os.path.basename(uploaded_file.name)]
+    else:
+        st.session_state.active_uploaded_sources = []
+
+    active_sources = st.session_state.get("active_uploaded_sources", [])
+    if active_sources:
+        st.caption("Active indexed document:")
+        for source in active_sources:
+            st.write(f"- {source}")
+    else:
+        st.caption("No active uploaded document for this session.")
+
+    if st.button("Reset document index"):
+        vector_store.delete_uploaded_documents()
+        st.session_state.active_uploaded_sources = []
+        st.session_state.last_file_digest = None
+        st.session_state.last_chunk_debug = []
+        st.session_state.last_ingest_timings = None
+        st.success("Uploaded document chunks cleared from the active index.")
+        st.rerun()
+
     st.markdown("---")
     st.subheader("Suggested workflows")
     st.markdown(
@@ -223,13 +274,15 @@ with st.sidebar:
 if uploaded_file:
     file_bytes = uploaded_file.getvalue()
     file_digest = hashlib.sha256(file_bytes).hexdigest()
+    active_source = os.path.basename(uploaded_file.name)
+    st.session_state.active_uploaded_sources = [active_source]
 
     if st.session_state.get("last_file_digest") != file_digest:
         st.session_state.last_file_digest = file_digest
         ingest_start = time.perf_counter()
 
         with st.spinner("Reading, chunking, embedding, and indexing the document..."):
-            file_path = os.path.join("data/raw", os.path.basename(uploaded_file.name))
+            file_path = os.path.join("data/raw", active_source)
             os.makedirs("data/raw", exist_ok=True)
             with open(file_path, "wb") as file:
                 file.write(file_bytes)
@@ -243,11 +296,11 @@ if uploaded_file:
             chunks = [chunk["text"] for chunk in chunk_records]
             chunk_seconds = time.perf_counter() - chunk_start
 
-            file_hash = hashlib.sha256(f"{uploaded_file.name}:{file_digest}".encode("utf-8")).hexdigest()[:10]
+            file_hash = hashlib.sha256(f"{active_source}:{file_digest}".encode("utf-8")).hexdigest()[:10]
             ids = [f"{file_hash}_chunk_{index}" for index in range(len(chunks))]
             metadatas = [
                 {
-                    "source": uploaded_file.name,
+                    "source": active_source,
                     "source_type": "uploaded",
                     "chunk": index + 1,
                     "section_title": chunk["section_title"],
@@ -260,7 +313,7 @@ if uploaded_file:
             ]
 
             index_start = time.perf_counter()
-            vector_store.delete_by_source(uploaded_file.name)
+            vector_store.delete_by_source(active_source)
             vector_store.add_documents(documents=chunks, ids=ids, metadatas=metadatas)
             index_seconds = time.perf_counter() - index_start
             total_ingest_seconds = time.perf_counter() - ingest_start
@@ -283,7 +336,7 @@ if uploaded_file:
                 "chunk_in_section": chunk["chunk_in_section"],
                 "chunk_chars": chunk["chunk_chars"],
                 "preview": chunk["text"][:100],
-                "source": uploaded_file.name,
+                "source": active_source,
                 "source_type": "uploaded",
                 "document_type": os.path.splitext(uploaded_file.name)[1].lower(),
             }
@@ -330,7 +383,17 @@ if query:
         st.write(query)
 
     retrieval_start = time.perf_counter()
-    retrieved_items = vector_store.query_with_sources(query, n_results=N_RESULTS)
+    active_sources = st.session_state.get("active_uploaded_sources", [])
+    retrieved_items = vector_store.query_with_sources(
+        query,
+        n_results=N_RESULTS,
+        source_filter=active_sources,
+    )
+    retrieved_items = include_intro_chunks_for_summary(
+        retrieved_items,
+        active_sources,
+        classify_query_intent(query),
+    )
     timings["retrieval"] = round(time.perf_counter() - retrieval_start, 3)
     relevant_items = []
     assessment = None
@@ -482,6 +545,7 @@ if query:
     with st.expander("Debug: relevance decision"):
         st.write(f"Retrieved chunk count: {len(retrieved_items)}")
         st.write(f"Accepted source count: {len(relevant_items)}")
+        st.write(f"Active uploaded sources: {active_sources}")
         st.write(f"Fast document path used: {used_fast_path}")
         if refusal_reason:
             st.write(f"Refusal reason: {refusal_reason}")
