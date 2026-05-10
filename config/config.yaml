@@ -1,11 +1,15 @@
 model:
+  provider: ollama
   name: phi3:mini
+  openai_name: gpt-4o-mini
   temperature: 0.1
   max_tokens: 320
   history_turns: 1
 
 embedding:
+  provider: ollama
   model: nomic-embed-text
+  openai_model: text-embedding-3-small
 
 chunking:
   chunk_size: 450

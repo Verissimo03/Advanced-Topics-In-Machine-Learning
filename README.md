@@ -36,7 +36,8 @@ Primary users:
 
 - Streamlit frontend.
 - Document upload for TXT, Markdown, PDF, and DOCX.
-- Local Ollama LLM and embeddings.
+- Local Ollama LLM and embeddings for private development.
+- OpenAI LLM and embeddings option for Streamlit Cloud deployment.
 - ChromaDB persistent vector store.
 - Conversation history.
 - Source-grounded answers.
@@ -59,7 +60,7 @@ Pipeline:
 5. Persistent vector storage in ChromaDB.
 6. Semantic retrieval.
 7. Source-labelled prompt construction.
-8. Ollama LLM answer generation.
+8. LLM answer generation through the configured provider.
 9. Source-grounded response with safety footer.
 10. Conversation history storage.
 
@@ -67,8 +68,8 @@ Core files:
 - `frontend/app.py`: Streamlit user interface and legal workflow logic.
 - `src/ingestion/document_loader.py`: TXT, Markdown, PDF, DOCX parsing.
 - `src/utils/chunker.py`: recursive text splitting.
-- `src/memory/vector_store.py`: ChromaDB storage and source-aware retrieval.
-- `src/models/llm.py`: Ollama chat wrapper.
+- `src/memory/vector_store.py`: ChromaDB storage and provider-aware embeddings.
+- `src/models/llm.py`: Ollama/OpenAI chat wrapper.
 - `src/memory/conversation_history.py`: persistent chat history.
 - `config/config.yaml`: model, chunking, vector store, prompt, and disclaimer settings.
 
@@ -77,12 +78,25 @@ Core files:
 - Python
 - Streamlit
 - Ollama
+- OpenAI API, optional for cloud deployment
 - ChromaDB
 - LangChain text splitters
 - pypdf
 - python-docx
 
-## How to Run Locally
+## How to Run Locally With Ollama
+
+Ollama is the default local provider in `config/config.yaml`:
+
+```yaml
+model:
+  provider: ollama
+  name: phi3:mini
+
+embedding:
+  provider: ollama
+  model: nomic-embed-text
+```
 
 1. Create and activate a virtual environment:
 
@@ -110,7 +124,35 @@ ollama pull nomic-embed-text
 streamlit run frontend/app.py
 ```
 
-## How to Deploy
+## How to Deploy on Streamlit Cloud
+
+Streamlit Cloud does not run Ollama by default. For cloud deployment, switch the app to OpenAI for both chat generation and embeddings.
+
+Option A: edit `config/config.yaml` before deploying:
+
+```yaml
+model:
+  provider: openai
+  openai_name: gpt-4o-mini
+
+embedding:
+  provider: openai
+  openai_model: text-embedding-3-small
+```
+
+Option B: keep the local config as Ollama and override it in Streamlit Cloud secrets:
+
+```toml
+OPENAI_API_KEY = "your_api_key_here"
+AI_PROVIDER = "openai"
+EMBEDDING_PROVIDER = "openai"
+```
+
+The app reads secrets from `st.secrets` first and falls back to environment variables. API keys must never be committed to the repository.
+
+After changing provider, upload/index demo documents again. Ollama and OpenAI embeddings are stored in separate Chroma collections to avoid embedding-dimension conflicts.
+
+## Deployment Notes
 
 The prototype can be deployed as a Streamlit app with a persistent storage volume for:
 - `data/raw/`
