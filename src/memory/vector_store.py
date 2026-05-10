@@ -14,13 +14,7 @@ class VectorStore:
     Wrapper around ChromaDB to manage persistent document embeddings.
     """
 
-    def __init__(
-        self,
-        persist_directory: str,
-        embedding_model: str,
-        embedding_provider: str = "ollama",
-        openai_api_key: str | None = None,
-    ):
+    def __init__(self, persist_directory: str, embedding_model: str):
         """
         Initialize the vector store.
 
@@ -31,49 +25,20 @@ class VectorStore:
 
         embedding_model : str
             Name of the embedding model used for generating embeddings.
-
-        embedding_provider : str
-            Provider used for embeddings. Supported values: ollama, openai.
-
-        openai_api_key : str | None
-            API key used when embedding_provider is openai.
         """
 
         self.persist_directory = persist_directory
-        self.embedding_provider = embedding_provider.lower()
-        self.embedding_model = embedding_model
 
-        if self.embedding_provider == "ollama":
-            self.embedding_function = embedding_functions.OllamaEmbeddingFunction(
-                model_name=embedding_model
-            )
-        elif self.embedding_provider == "openai":
-            if not openai_api_key:
-                raise RuntimeError(
-                    "OPENAI_API_KEY is required when embedding provider is openai."
-                )
-            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=openai_api_key,
-                model_name=embedding_model,
-            )
-        else:
-            raise ValueError(
-                f"Unsupported embedding provider: {embedding_provider}. "
-                "Use 'ollama' or 'openai'."
-            )
+        # Embedding function
+        self.embedding_function = embedding_functions.OllamaEmbeddingFunction(
+            model_name=embedding_model
+        )
 
         # Client
         self.client = chromadb.PersistentClient(path=persist_directory)
 
-        # Keep provider/model collections separate to avoid embedding dimension
-        # conflicts when switching between Ollama and OpenAI.
-        safe_model = (
-            embedding_model.replace(":", "_")
-            .replace("-", "_")
-            .replace(".", "_")
-            .lower()
-        )
-        self.collection_name = f"documents_{self.embedding_provider}_{safe_model}"
+        # Collection
+        self.collection_name = "documents"
 
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,

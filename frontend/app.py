@@ -34,53 +34,15 @@ from src.utils.query_guard import (
     service_route_for_mode,
     should_refuse_assessment,
 )
-from src.utils.runtime_config import (
-    get_ai_provider,
-    get_openai_api_key,
-    get_runtime_value,
-)
 
 
 config = load_config()
 
-MODEL_PROVIDER = get_ai_provider(config)
-EMBEDDING_PROVIDER = str(
-    get_runtime_value(
-        "EMBEDDING_PROVIDER",
-        get_runtime_value("AI_PROVIDER", config["embedding"].get("provider", MODEL_PROVIDER)),
-    )
-).strip().lower()
-OPENAI_CONFIG_ERROR = None
-
-if MODEL_PROVIDER == "openai":
-    OPENAI_API_KEY = get_openai_api_key()
-    if not OPENAI_API_KEY:
-        OPENAI_CONFIG_ERROR = (
-            "OPENAI_API_KEY is required when provider is set to openai. "
-            "Add it to Streamlit Cloud secrets or set it as an environment variable."
-        )
-    MODEL_NAME = config["model"].get("openai_name", "gpt-4o-mini")
-else:
-    OPENAI_API_KEY = None
-    MODEL_NAME = config["model"]["name"]
-
-if EMBEDDING_PROVIDER == "openai":
-    OPENAI_API_KEY = OPENAI_API_KEY or get_openai_api_key()
-    if not OPENAI_API_KEY:
-        OPENAI_CONFIG_ERROR = (
-            "OPENAI_API_KEY is required when embedding provider is set to openai. "
-            "Add it to Streamlit Cloud secrets or set it as an environment variable."
-        )
-    EMBEDDING_MODEL = config["embedding"].get(
-        "openai_model",
-        "text-embedding-3-small",
-    )
-else:
-    EMBEDDING_MODEL = config["embedding"]["model"]
-
+MODEL_NAME = config["model"]["name"]
 TEMPERATURE = config["model"]["temperature"]
 MAX_TOKENS = config["model"]["max_tokens"]
 HISTORY_TURNS = config["model"]["history_turns"]
+EMBEDDING_MODEL = config["embedding"]["model"]
 CHUNK_SIZE = config["chunking"]["chunk_size"]
 CHUNK_OVERLAP = config["chunking"]["chunk_overlap"]
 VECTOR_STORE_PATH = config["vector_store"]["path"]
@@ -134,10 +96,6 @@ Portugal/EU-focused legal triage and document-understanding assistant for small 
 
 st.info(LEGAL_DISCLAIMER)
 
-if OPENAI_CONFIG_ERROR:
-    st.error(OPENAI_CONFIG_ERROR)
-    st.stop()
-
 st.markdown(
     """
 Use this prototype to review contracts, explore GDPR obligations, identify missing clauses, prepare lawyer checklists, and decide when specialist legal support is needed.
@@ -156,64 +114,32 @@ def get_chunker(chunk_size, chunk_overlap):
 
 
 @st.cache_resource
-def get_vector_store(
-    persist_directory,
-    embedding_model,
-    embedding_provider,
-    _openai_api_key=None,
-):
+def get_vector_store(persist_directory, embedding_model):
     return VectorStore(
         persist_directory=persist_directory,
         embedding_model=embedding_model,
-        embedding_provider=embedding_provider,
-        openai_api_key=_openai_api_key,
     )
 
 
 @st.cache_resource
-def get_llm(
-    model_provider,
-    model_name,
-    system_prompt,
-    temperature,
-    max_tokens,
-    history_turns,
-    _openai_api_key=None,
-):
+def get_llm(model_name, system_prompt, temperature, max_tokens, history_turns):
     return LLM(
         model_name=model_name,
         system_prompt=system_prompt,
-        provider=model_provider,
         temperature=temperature,
         max_tokens=max_tokens,
         history_turns=history_turns,
-        openai_api_key=_openai_api_key,
     )
 
 
 loader = get_loader()
 chunker = get_chunker(CHUNK_SIZE, CHUNK_OVERLAP)
 
-vector_store_key = f"{VECTOR_STORE_PATH}:{EMBEDDING_PROVIDER}:{EMBEDDING_MODEL}"
-if st.session_state.get("vector_store_key") != vector_store_key:
-    st.session_state.vector_store = get_vector_store(
-        VECTOR_STORE_PATH,
-        EMBEDDING_MODEL,
-        EMBEDDING_PROVIDER,
-        OPENAI_API_KEY,
-    )
-    st.session_state.vector_store_key = vector_store_key
+if "vector_store" not in st.session_state:
+    st.session_state.vector_store = get_vector_store(VECTOR_STORE_PATH, EMBEDDING_MODEL)
 
 vector_store = st.session_state.vector_store
-llm = get_llm(
-    MODEL_PROVIDER,
-    MODEL_NAME,
-    SYSTEM_PROMPT,
-    TEMPERATURE,
-    MAX_TOKENS,
-    HISTORY_TURNS,
-    OPENAI_API_KEY,
-)
+llm = get_llm(MODEL_NAME, SYSTEM_PROMPT, TEMPERATURE, MAX_TOKENS, HISTORY_TURNS)
 history_manager = ConversationHistory()
 
 
@@ -242,9 +168,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("System")
-    st.write(f"Provider: {MODEL_PROVIDER}")
     st.write(f"LLM: {MODEL_NAME}")
-    st.write(f"Embeddings: {EMBEDDING_PROVIDER} / {EMBEDDING_MODEL}")
+    st.write(f"Embeddings: {EMBEDDING_MODEL}")
     st.write("Vector DB: ChromaDB")
     st.write("Mode: Source-grounded RAG")
 

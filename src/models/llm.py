@@ -1,7 +1,7 @@
 """
 LLM Module
 
-Handles interaction with the configured chat model provider.
+Handles interaction with the local language model via Ollama.
 """
 
 import json
@@ -11,39 +11,22 @@ import ollama
 
 class LLM:
     """
-    Wrapper for Ollama or OpenAI chat models.
+    Wrapper for the local Ollama language model.
     """
 
     def __init__(
         self,
         model_name: str,
         system_prompt: str,
-        provider: str = "ollama",
         temperature: float = 0.2,
         max_tokens: int = 450,
         history_turns: int = 2,
-        openai_api_key: str | None = None,
     ):
         self.model_name = model_name
         self.system_prompt = system_prompt
-        self.provider = provider.lower()
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.history_turns = history_turns
-        self.openai_client = None
-
-        if self.provider == "openai":
-            if not openai_api_key:
-                raise RuntimeError(
-                    "OPENAI_API_KEY is required when model provider is openai."
-                )
-            from openai import OpenAI
-
-            self.openai_client = OpenAI(api_key=openai_api_key)
-        elif self.provider != "ollama":
-            raise ValueError(
-                f"Unsupported model provider: {provider}. Use 'ollama' or 'openai'."
-            )
 
     def generate(self, question: str, context: list[str], history: list = None) -> str:
         """
@@ -81,7 +64,16 @@ Question:
 """
         })
 
-        return self._chat(messages, temperature=self.temperature, max_tokens=self.max_tokens)
+        response = ollama.chat(
+            model=self.model_name,
+            messages=messages,
+            options={
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            }
+        )
+
+        return response["message"]["content"]
 
     def assess_context(self, question: str, retrieved_items: list[dict]) -> dict:
         """
@@ -135,13 +127,16 @@ Retrieved sources:
 """
 
         try:
-            content = self._chat(
-                [{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=120,
-                json_mode=True,
+            response = ollama.chat(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                format="json",
+                options={
+                    "temperature": 0,
+                    "num_predict": 120,
+                },
             )
-            assessment = json.loads(content)
+            assessment = json.loads(response["message"]["content"])
         except Exception:
             return {
                 "domain_relevance": "unsupported",
@@ -164,39 +159,3 @@ Retrieved sources:
         assessment["parse_error"] = False
 
         return assessment
-
-    def _chat(
-        self,
-        messages: list[dict],
-        temperature: float,
-        max_tokens: int,
-        json_mode: bool = False,
-    ) -> str:
-        """Call the active chat provider and return assistant text."""
-
-        if self.provider == "ollama":
-            kwargs = {
-                "model": self.model_name,
-                "messages": messages,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens,
-                },
-            }
-            if json_mode:
-                kwargs["format"] = "json"
-
-            response = ollama.chat(**kwargs)
-            return response["message"]["content"]
-
-        kwargs = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-
-        response = self.openai_client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
