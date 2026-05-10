@@ -28,7 +28,13 @@ class LLM:
         self.max_tokens = max_tokens
         self.history_turns = history_turns
 
-    def generate(self, question: str, context: list[str], history: list = None) -> str:
+    def generate(
+        self,
+        question: str,
+        context: list[str],
+        history: list = None,
+        max_tokens: int | None = None,
+    ) -> str:
         """
         Generate an answer using retrieved context and conversation history.
         """
@@ -69,7 +75,7 @@ Question:
             messages=messages,
             options={
                 "temperature": self.temperature,
-                "num_predict": self.max_tokens,
+                "num_predict": max_tokens or self.max_tokens,
             }
         )
 

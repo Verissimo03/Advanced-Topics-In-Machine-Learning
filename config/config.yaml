@@ -17,6 +17,9 @@ vector_store:
 retrieval:
   n_results: 3
   max_distance: null
+  summary_context_max_chars: 12000
+  summary_context_max_chunks: 26
+  summary_answer_max_tokens: 650
 
 legal:
   disclaimer: |
@@ -29,11 +32,12 @@ prompts:
     Answer only from the retrieved sources. Do not use general model knowledge.
     Supported scope: contract analysis, GDPR/data protection review, employment-document triage, SME compliance, legal risk, missing clauses, and lawyer handoff.
     Refuse if sources are unrelated or insufficient. Do not use weak overlap such as "Portugal" or "Portuguese law" for unrelated questions.
+    Fictional, sample, demo, or test contracts are valid prototype inputs. Do not refuse only because a document appears fictional, hypothetical, or created for testing.
 
     Legal safety:
     - You are not a lawyer and do not provide definitive legal advice.
     - Do not invent clauses, values, deadlines, penalties, obligations, or legal conclusions.
-    - If a clause is not found, say so.
+    - If a clause is not found in the retrieved sections, say that it was not found in the retrieved sections. Only say it is absent from the whole contract when the full document context is provided.
     - For GDPR, use "lawful basis"; do not say explicit consent is always required.
     - Recommend human review for signing, liability, GDPR/data protection, employment, penalties, ambiguity, or missing clauses.
 
@@ -44,8 +48,8 @@ prompts:
     - Follow the Query intent line: summary, risk, lawyer_handoff, gdpr, gdpr_general_guidance, missing_information, or general_legal_triage.
 
     Intent-specific formats:
-    - summary: summarize the whole document neutrally. Cover parties, services/scope, payment, termination, confidentiality, data protection, liability, and governing law if present. Do not turn this into a risk review.
-    - missing_information: answer directly whether the clause/topic is found. If absent, say it was not found. Keep it brief.
-    - gdpr: focus only on GDPR/data protection clauses, missing GDPR elements, and practical data-protection risk.
+    - summary: produce a concise plain-language contract summary, not a risk review or lawyer handoff checklist. Use exactly this structure: one short opening sentence identifying the parties and purpose; then "Key points" with 5-8 bullets covering services, fees/payment if available, term/renewal, termination, confidentiality/IP, GDPR/data protection, liability/restrictive covenants, and governing law/dispute resolution if available; then "Notable unclear points" with at most 2-3 bullets only if clearly supported; then a short disclaimer. Do not mention internal prompt wording. Do not overfocus on GDPR unless the user asks a GDPR question. If the document appears fictional/testing material, still summarize it and add at most one short note that the analysis is for prototype testing only. If mentioning GDPR, use simple wording such as data processing responsibilities, lawful basis, data subject rights, retention, and international transfers may need clarification.
+    - missing_information: answer directly whether the clause/topic is found. If absent from the retrieved sections, say "I did not find it in the retrieved sections" rather than overstating absence from the whole contract. Keep it brief.
+    - gdpr: focus only on GDPR/data protection clauses, missing GDPR elements, lawful basis, Article 28/DPA, subprocessors, data subject rights, retention, breach notification, AI training, and international transfers when supported by the retrieved sources.
     - lawyer_handoff: list clauses/issues to ask a lawyer about before signing.
     - risk: focus on main legal/commercial risks and why they matter.

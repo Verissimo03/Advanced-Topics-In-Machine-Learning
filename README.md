@@ -45,7 +45,6 @@ Primary users:
 - Portugal/EU SME legal triage prompt.
 - Human-review recommendation logic.
 - Legal service routing.
-- Fictional demo documents for safe classroom testing.
 - Investor and academic documentation.
 
 ## Technical Architecture
@@ -136,15 +135,9 @@ For privacy-focused deployments, run Ollama and ChromaDB inside the same private
 - "Can you summarize this contract in simple language?"
 - "What should I ask a lawyer before signing this?"
 
-## Demo Documents
+## Demo Preparation
 
-The repository includes fictional, non-confidential demo files in `demo_documents/`:
-
-- `demo_supplier_agreement.md`
-- `demo_gdpr_checklist.md`
-- `demo_incomplete_service_agreement.md`
-
-Upload these files through the Streamlit sidebar before the live demo. They are intentionally simplified and should not be used as real legal documents.
+Use your own class demo contract or a non-confidential sample document. Upload it through the Streamlit sidebar before asking questions. The app supports fictional or test contracts for prototype evaluation, but outputs remain legal information and triage support only.
 
 ## AI Unit Economics
 
@@ -174,7 +167,7 @@ This is designed as more than a generic chatbot wrapper:
 - Human-in-the-loop escalation.
 - Structured risk/service routing.
 - Clause extraction and categorization roadmap.
-- Domain-specific evaluation dataset.
+- Domain-specific manual evaluation scenarios.
 - Privacy-focused local model option.
 - Conversation and document history for each SME client.
 
@@ -190,13 +183,7 @@ The course transparency appendix is available at `docs/genai_transparency_log.md
 
 ## Evaluation
 
-Evaluation assets are in:
-- `docs/evaluation_plan.md`
-- `evaluation/sample_questions.md`
-- `evaluation/hallucination_tests.md`
-- `evaluation/retrieval_tests.md`
-
-These files are designed to test source grounding, refusal behavior, legal disclaimer quality, human-review triggers, and retrieval relevance.
+The current project is tested manually through the Streamlit interface using uploaded contracts and legal/compliance questions. Recommended checks include source grounding, refusal of unrelated questions, contract summary quality, clause presence/absence, GDPR/data-protection analysis, and human-review recommendations.
 
 ## Limitations
 

@@ -15,11 +15,14 @@ SUPPORTED_SCOPE_TERMS = {
     "compliance",
     "confidentiality",
     "contract",
+    "covenant",
     "data",
     "document",
     "employment",
+    "fees",
     "gdpr",
     "invoice",
+    "ip",
     "jurisdiction",
     "law",
     "lawful",
@@ -27,6 +30,8 @@ SUPPORTED_SCOPE_TERMS = {
     "lawyer",
     "liability",
     "non-compete",
+    "non-solicitation",
+    "notices",
     "payment",
     "personal",
     "policy",
@@ -49,6 +54,8 @@ SUPPORTED_ACTION_TERMS = {
     "compare",
     "explain",
     "find",
+    "found",
+    "include",
     "identify",
     "missing",
     "negotiate",
@@ -90,6 +97,24 @@ GENERAL_GUIDANCE_TERMS = {
     "should",
     "small company",
     "sme",
+}
+
+DOCUMENT_ANALYSIS_TERMS = {
+    "appear",
+    "appears",
+    "clause",
+    "clauses",
+    "contain",
+    "contains",
+    "found",
+    "include",
+    "includes",
+    "missing",
+    "mention",
+    "mentions",
+    "review",
+    "this",
+    "uploaded",
 }
 
 LEGAL_DOCUMENT_TERMS = {
@@ -186,7 +211,22 @@ def classify_query_intent(question: str) -> str:
         if is_general_guidance_question(question):
             return "gdpr_general_guidance"
         return "gdpr"
-    if any(term in question_lower for term in ["missing", "not include", "does it contain", "non-compete"]):
+    if any(
+        term in question_lower
+        for term in [
+            "missing",
+            "not include",
+            "does it contain",
+            "does this",
+            "include",
+            "contain",
+            "is there",
+            "found",
+            "non-compete",
+            "non-solicitation",
+            "restrictive covenant",
+        ]
+    ):
         return "missing_information"
     return "general_legal_triage"
 
@@ -250,6 +290,9 @@ def is_general_guidance_question(question: str) -> bool:
 
     question_lower = question.lower()
     tokens = tokenize(question)
+
+    if tokens & DOCUMENT_ANALYSIS_TERMS:
+        return False
 
     has_general_guidance = bool(tokens & GENERAL_GUIDANCE_TERMS) or any(
         phrase in question_lower for phrase in GENERAL_GUIDANCE_TERMS if " " in phrase
@@ -392,11 +435,16 @@ def get_document_fallback_sources(question: str, retrieved_items: list[dict]) ->
     if intent == "gdpr_general_guidance":
         return []
 
-    sources = []
-    for item in retrieved_items:
-        if item.get("source_type", "uploaded") != "uploaded":
-            continue
+    uploaded_items = [
+        item
+        for item in retrieved_items
+        if item.get("source_type", "uploaded") == "uploaded"
+    ]
+    if intent == "summary":
+        return uploaded_items
 
+    sources = []
+    for item in uploaded_items:
         item_tokens = tokenize(item.get("text", ""))
         if item_tokens & LEGAL_DOCUMENT_TERMS:
             sources.append(item)

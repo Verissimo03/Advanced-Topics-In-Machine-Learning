@@ -50,6 +50,44 @@ SYSTEM_PROMPT = config["prompts"]["system"]
 LEGAL_DISCLAIMER = config["legal"]["disclaimer"]
 N_RESULTS = config["retrieval"]["n_results"]
 MAX_DISTANCE = config["retrieval"].get("max_distance")
+SUMMARY_CONTEXT_MAX_CHARS = config["retrieval"].get("summary_context_max_chars", 9000)
+SUMMARY_CONTEXT_MAX_CHUNKS = config["retrieval"].get("summary_context_max_chunks", 18)
+SUMMARY_ANSWER_MAX_TOKENS = config["retrieval"].get("summary_answer_max_tokens", MAX_TOKENS)
+
+CLAUSE_SECTION_TERMS = {
+    "non-solicitation": ["non-solicitation", "non solicitation", "restrictive covenant"],
+    "restrictive covenant": ["restrictive covenant", "non-solicitation", "non solicitation"],
+    "non-compete": ["non-compete", "non compete", "restrictive covenant"],
+    "confidentiality": ["confidentiality", "confidential"],
+    "liability": ["liability", "limitation of liability", "indemnity"],
+    "termination": ["termination", "cancel", "end"],
+    "data protection": ["data protection", "gdpr", "privacy", "personal data"],
+    "gdpr": [
+        "gdpr",
+        "data protection",
+        "article 28",
+        "dpa",
+        "data processing agreement",
+        "scc",
+        "standard contractual clauses",
+        "tia",
+        "transfer impact assessment",
+        "breach",
+        "lawful basis",
+        "data subject",
+        "retention",
+        "processor",
+        "subprocessor",
+        "sub-processor",
+        "ai training",
+        "international transfer",
+    ],
+    "payment": ["payment", "fees", "invoice", "price"],
+    "governing law": ["governing law", "jurisdiction", "dispute", "court"],
+    "assignment": ["assignment", "assign", "subcontract", "subcontracting"],
+    "intellectual property": ["intellectual property", "ip", "ownership", "ai outputs", "output"],
+    "notices": ["notice", "notices", "online terms"],
+}
 
 
 st.set_page_config(
@@ -64,6 +102,15 @@ def format_context(retrieved_items, query_intent):
     """Build source-labelled context for the LLM."""
 
     formatted = [f"Query intent: {query_intent}"]
+    if query_intent == "summary":
+        formatted.append(
+            "Summary output guide: write a concise plain-language contract summary, not a risk review. "
+            "Use one short opening sentence, then a 'Key points' section with 5-8 bullets, then an optional "
+            "'Notable unclear points' section with at most 2-3 bullets only if clearly supported. Cover the "
+            "main contract topics broadly and do not over-focus on GDPR unless the user asks specifically about GDPR. "
+            "If the source appears fictional, sample, demo, or test material, do not refuse; summarize the uploaded "
+            "content and add at most one short prototype-testing note."
+        )
     for index, item in enumerate(retrieved_items, start=1):
         source_type_label = item.get("source_type_label", "Uploaded document")
         section_title = item.get("section_title") or "Unknown section"
@@ -73,33 +120,156 @@ def format_context(retrieved_items, query_intent):
     return formatted
 
 
-def include_intro_chunks_for_summary(retrieved_items, active_sources, query_intent):
-    """
-    Add the opening chunk for summary questions.
+def merge_retrieved_items(*item_groups):
+    """Merge retrieved chunks while preserving order and removing duplicates."""
 
-    Legal document summaries usually need the document header/intro because
-    that is where parties and effective dates are commonly named. Semantic
-    retrieval may rank clause sections higher, so this keeps summaries grounded
-    in the beginning of the active uploaded document too.
-    """
-
-    if query_intent != "summary":
-        return retrieved_items
-
-    merged = list(retrieved_items)
-    existing_keys = {
-        (item.get("source"), item.get("chunk"))
-        for item in merged
-    }
-
-    for source in active_sources:
-        for intro_chunk in vector_store.get_source_chunks(source, limit=1):
-            chunk_key = (intro_chunk.get("source"), intro_chunk.get("chunk"))
-            if chunk_key not in existing_keys:
-                merged.insert(0, intro_chunk)
-                existing_keys.add(chunk_key)
-
+    merged = []
+    seen = set()
+    for group in item_groups:
+        for item in group or []:
+            key = (item.get("source"), item.get("chunk"))
+            if key in seen:
+                continue
+            merged.append(item)
+            seen.add(key)
     return merged
+
+
+def is_party_identity_question(query):
+    """Return True for questions asking who the contract parties are."""
+
+    query_lower = query.lower()
+    return (
+        "parties" in query_lower
+        or "party" in query_lower
+        or "who is the customer" in query_lower
+        or "who is the supplier" in query_lower
+        or "who are the parties" in query_lower
+    )
+
+
+def extract_section_terms(query):
+    """Extract general legal section terms that can be matched to section titles."""
+
+    query_lower = query.lower()
+    terms = set()
+
+    for canonical_term, synonyms in CLAUSE_SECTION_TERMS.items():
+        if canonical_term in query_lower or any(synonym in query_lower for synonym in synonyms):
+            terms.update(synonyms)
+
+    for token in query_lower.replace("/", " ").replace("-", " ").split():
+        clean_token = "".join(character for character in token if character.isalnum())
+        if len(clean_token) >= 4:
+            terms.add(clean_token)
+
+    return terms
+
+
+def section_title_matches(item, terms):
+    """Return True when a chunk section title matches extracted query terms."""
+
+    section_title = (item.get("section_title") or "").lower()
+    if not section_title:
+        return False
+
+    compact_title = section_title.replace("-", " ")
+    return any(term in compact_title for term in terms)
+
+
+def get_section_matched_chunks(active_sources, query, limit=6):
+    """Retrieve chunks whose section titles match the clause/legal topic."""
+
+    terms = extract_section_terms(query)
+    if not terms:
+        return []
+
+    matches = []
+    for source in active_sources:
+        for item in vector_store.get_source_chunks(source):
+            if section_title_matches(item, terms):
+                matches.append(item)
+                if len(matches) >= limit:
+                    return matches
+
+    return matches
+
+
+def build_summary_context(active_sources, semantic_items):
+    """
+    Build broader document context for contract summaries.
+
+    Small/medium documents are included fully within a character budget. Larger
+    documents use the first chunk, semantically retrieved chunks, and a diverse
+    one-chunk-per-section sample guided by common contract section titles.
+    """
+
+    all_chunks = []
+    for source in active_sources:
+        all_chunks.extend(vector_store.get_source_chunks(source))
+
+    if not all_chunks:
+        return semantic_items
+
+    total_chars = sum(len(item.get("text", "")) for item in all_chunks)
+    if total_chars <= SUMMARY_CONTEXT_MAX_CHARS and len(all_chunks) <= SUMMARY_CONTEXT_MAX_CHUNKS:
+        return all_chunks
+
+    summary_items = []
+    used_titles = set()
+    used_keys = set()
+    current_chars = 0
+
+    def add_item(item):
+        nonlocal current_chars
+        key = (item.get("source"), item.get("chunk"))
+        if key in used_keys:
+            return False
+        if len(summary_items) >= SUMMARY_CONTEXT_MAX_CHUNKS:
+            return False
+        item_chars = len(item.get("text", ""))
+        if summary_items and current_chars + item_chars > SUMMARY_CONTEXT_MAX_CHARS:
+            return False
+        summary_items.append(item)
+        used_keys.add(key)
+        current_chars += item_chars
+        return True
+
+    if all_chunks:
+        add_item(all_chunks[0])
+
+    # Prefer broad coverage in original document order: one representative chunk
+    # per section title before adding semantic matches.
+    for item in all_chunks:
+        section_title = (item.get("section_title") or "").lower()
+        if not section_title or section_title in used_titles:
+            continue
+        if add_item(item):
+            used_titles.add(section_title)
+        if len(summary_items) >= SUMMARY_CONTEXT_MAX_CHUNKS:
+            break
+
+    for item in semantic_items:
+        add_item(item)
+
+    return summary_items
+
+
+def build_retrieval_context(query, active_sources, semantic_items):
+    """Combine semantic retrieval with metadata-aware legal document retrieval."""
+
+    query_intent = classify_query_intent(query)
+    intro_items = []
+    if query_intent == "summary":
+        return build_summary_context(active_sources, semantic_items)
+
+    if is_party_identity_question(query):
+        for source in active_sources:
+            intro_items.extend(vector_store.get_source_chunks(source, limit=1))
+
+    section_matches = get_section_matched_chunks(active_sources, query)
+
+    return merge_retrieved_items(intro_items, section_matches, semantic_items)
 
 
 def save_uploaded_file(uploaded_file):
@@ -384,15 +554,15 @@ if query:
 
     retrieval_start = time.perf_counter()
     active_sources = st.session_state.get("active_uploaded_sources", [])
-    retrieved_items = vector_store.query_with_sources(
+    semantic_items = vector_store.query_with_sources(
         query,
         n_results=N_RESULTS,
         source_filter=active_sources,
     )
-    retrieved_items = include_intro_chunks_for_summary(
-        retrieved_items,
+    retrieved_items = build_retrieval_context(
+        query,
         active_sources,
-        classify_query_intent(query),
+        semantic_items,
     )
     timings["retrieval"] = round(time.perf_counter() - retrieval_start, 3)
     relevant_items = []
@@ -472,7 +642,12 @@ if query:
 
             generation_start = time.perf_counter()
             with st.spinner("Analyzing the retrieved document context..."):
-                answer = llm.generate(query, context_items, history)
+                answer = llm.generate(
+                    query,
+                    context_items,
+                    history,
+                    max_tokens=SUMMARY_ANSWER_MAX_TOKENS if query_intent == "summary" else None,
+                )
             timings["answer_generation"] = round(time.perf_counter() - generation_start, 3)
 
             safety_footer = [
@@ -504,7 +679,12 @@ if query:
 
         generation_start = time.perf_counter()
         with st.spinner("Analyzing the retrieved document context..."):
-            answer = llm.generate(query, context_items, history)
+            answer = llm.generate(
+                query,
+                context_items,
+                history,
+                max_tokens=SUMMARY_ANSWER_MAX_TOKENS if query_intent == "summary" else None,
+            )
         timings["answer_generation"] = round(time.perf_counter() - generation_start, 3)
 
         safety_footer = [
