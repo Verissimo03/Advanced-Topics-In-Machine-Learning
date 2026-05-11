@@ -45,7 +45,6 @@ Primary users:
 - Portugal/EU SME legal triage prompt.
 - Human-review recommendation logic.
 - Legal service routing.
-- Investor and academic documentation.
 
 ## Technical Architecture
 
@@ -139,24 +138,6 @@ For privacy-focused deployments, run Ollama and ChromaDB inside the same private
 
 Use your own class demo contract or a non-confidential sample document. Upload it through the Streamlit sidebar before asking questions. The app supports fictional or test contracts for prototype evaluation, but outputs remain legal information and triage support only.
 
-## AI Unit Economics
-
-The prototype uses local Ollama models, so marginal inference cost is low after hosting costs. A cloud API version can still be viable with usage limits by tier. See `docs/ai_unit_economics.md` for assumptions and pricing coverage.
-
-## Revenue Model
-
-Suggested SaaS tiers:
-- Free/basic: limited document checks.
-- Starter: monthly subscription for small SMEs.
-- Professional: higher usage, contract analysis, checklists, history.
-- Premium/human-in-the-loop: legal review credits or partner lawyer referral.
-
-Additional models:
-- Pay-per-contract review.
-- Monthly compliance monitoring.
-- Law firm referral partnerships.
-- White-label version for accounting firms, consultants, and law firms.
-
 ## Moat and Defensibility
 
 This is designed as more than a generic chatbot wrapper:
@@ -175,12 +156,6 @@ This is designed as more than a generic chatbot wrapper:
 
 The assistant provides legal information and triage support, not definitive legal advice. It is not a substitute for a licensed lawyer. Users should request professional legal review for high-risk, ambiguous, jurisdiction-specific, employment, GDPR, tax, litigation, or contract-signing decisions.
 
-See `docs/safety_and_privacy.md`.
-
-## GenAI Transparency
-
-The course transparency appendix is available at `docs/genai_transparency_log.md`. It records AI assistance during ideation, coding, debugging, prompt engineering, writing, and business-plan development.
-
 ## Evaluation
 
 The current project is tested manually through the Streamlit interface using uploaded contracts and legal/compliance questions. Recommended checks include source grounding, refusal of unrelated questions, contract summary quality, clause presence/absence, GDPR/data-protection analysis, and human-review recommendations.
@@ -192,14 +167,3 @@ The current project is tested manually through the Streamlit interface using upl
 - The current prototype does not include a fixed curated legal knowledge base.
 - Production deployment needs tenant isolation, authentication, encryption, and stronger audit logging.
 - Human lawyers are required for definitive legal conclusions.
-
-## Future Improvements
-
-- Multi-tenant workspaces.
-- Clause extraction and risk scoring.
-- Portuguese/English legal synonym expansion.
-- Document comparison.
-- Lawyer review dashboard.
-- Admin analytics and audit exports.
-- Optional curated Portugal/EU legal knowledge base.
-- Production authentication and encryption.
